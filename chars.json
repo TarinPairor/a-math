@@ -36,6 +36,6 @@
   
     "=": { "value": 1, "count": 11, "ui": "=₁", "index": 27 },
   
-    "?": { "value": 0, "count": 4, "ui": "\u0000₀", "index": 28, "alias": "?" }
+    "?": { "value": 0, "count": 4, "ui": "?₀", "index": 28, "alias": "?" }
   }
   

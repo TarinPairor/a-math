@@ -7,6 +7,7 @@ from typing import List, Tuple, Optional
 from copy import deepcopy
 from tiles import resolve_tile, get_tile_by_index, get_tile_display
 from ui import display_board, display_info, show_state as ui_show_state
+from validation import validate_play, BLANK_VALUES, NUMBER_TILES
 
 
 class AMathGame:
@@ -166,21 +167,121 @@ class AMathGame:
         # Parse comma-separated tiles
         identifiers = [id_str.strip() for id_str in tiles_str.split(',')]
         current_row, current_col = row, col
+        new_tiles = []  # Track newly placed tiles for validation
+        
+        # NOTE: Check for out of bounds BEFORE placing any tiles
+        # Count how many positions we need (including skips, as they still take up space)
+        num_positions = len(identifiers)
+        if is_horizontal:
+            if current_col + num_positions > 15:
+                print(f"Error: Play extends beyond board boundary. Starting at column {chr(ord('A')+current_col)}{current_row+1}, {num_positions} positions would extend to column {chr(ord('A')+current_col+num_positions-1)} (board only has columns A-O)")
+                return False
+        else:
+            if current_row + num_positions > 15:
+                print(f"Error: Play extends beyond board boundary. Starting at {chr(ord('A')+current_col)}{current_row+1}, {num_positions} positions would extend to row {current_row+num_positions} (board only has rows 1-15)")
+                return False
+        
+        # NOTE: Check tile count limit (8 tiles maximum per turn) Remove this to play around with cases
+        # Count non-skip identifiers (excluding '.' for skipping existing tiles)
+        num_tiles_to_place = len([id for id in identifiers if id != '.'])
+        if num_tiles_to_place > 8:
+            print(f"Error: Cannot place more than 8 tiles in one turn. Attempted to place {num_tiles_to_place} tiles.")
+            return False
         
         for identifier in identifiers:
             if 0 <= current_row < 15 and 0 <= current_col < 15:
                 if identifier == '.':
                     # Skip existing tile, just move position
+                    # NOTE: Verify that there IS an existing tile to skip
+                    if original_board[current_row][current_col] == ' ':
+                        print(f"Error: Cannot skip empty position at {chr(ord('A')+current_col)}{current_row+1}")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    # Just move to next position without placing anything
                     pass
                 elif identifier.startswith('(') and identifier.endswith(')'):
                     # Blank tile with value: (value) format
                     blank_value = identifier[1:-1]  # Remove parentheses
+                    
+                    # Validate blank value: must be a valid single value (0-20, +, -, ×, ÷, =)
+                    # First try to resolve as alias (e.g., "/" -> "÷", "*" -> "×")
+                    resolved_value = None
+                    if blank_value in self.chars:
+                        # Direct tile key
+                        resolved_value = blank_value
+                    else:
+                        # Try to resolve as alias
+                        for char_key, char_data in self.chars.items():
+                            if char_data.get('alias') == blank_value:
+                                resolved_value = char_key
+                                break
+                    
+                    # Check if resolved value is valid for blank tiles
+                    if resolved_value is None or resolved_value not in BLANK_VALUES:
+                        # Invalid blank value - restore board and return False
+                        print(f"Error: Invalid blank tile value '{blank_value}'. Blank tiles can only represent: 0-20, +, -, ×, ÷, =")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
+                    # NOTE: Check that we're not overlapping with existing tiles (except when using '.')
+                    if original_board[current_row][current_col] != ' ':
+                        # Trying to place a tile where one already exists
+                        print(f"Error: Cannot place tile at {chr(ord('A')+current_col)}{current_row+1}: position already occupied")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
                     # Store blank tile as "?value" to track what it represents
-                    self.board[current_row][current_col] = f"?{blank_value}"
+                    # Only add to new_tiles if this position was empty in original board
+                    if original_board[current_row][current_col] == ' ':
+                        new_tiles.append((current_row, current_col, f"?{resolved_value}"))
+                    self.board[current_row][current_col] = f"?{resolved_value}"
                 else:
                     # Resolve tile identifier to tile key
                     tile_key = self._resolve_tile(identifier)
                     if tile_key:
+                        # NOTE: Validate that multi-digit number tiles (10-20) are not used
+                        # adjacent to other number tiles - must use single digits to form numbers
+                        if tile_key in NUMBER_TILES and len(tile_key) > 1:
+                            current_idx = identifiers.index(identifier)
+                            
+                            # Check if previous identifier is also a number tile
+                            if current_idx > 0:
+                                prev_id = identifiers[current_idx - 1].strip()
+                                if prev_id != '.' and not (prev_id.startswith('(') and prev_id.endswith(')')):
+                                    prev_tile = self._resolve_tile(prev_id)
+                                    if prev_tile and prev_tile in NUMBER_TILES:
+                                        # Invalid: number tile followed by multi-digit tile
+                                        print(f"Error: Multi-digit number tile '{tile_key}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '2,17' or '17,2')")
+                                        self.board = original_board
+                                        self.turn = original_turn
+                                        return False
+                            
+                            # Check if next identifier is also a number tile
+                            if current_idx + 1 < len(identifiers):
+                                next_id = identifiers[current_idx + 1].strip()
+                                if next_id != '.' and not (next_id.startswith('(') and next_id.endswith(')')):
+                                    next_tile = self._resolve_tile(next_id)
+                                    if next_tile and next_tile in NUMBER_TILES:
+                                        # Invalid: multi-digit tile followed by number tile
+                                        print(f"Error: Multi-digit number tile '{tile_key}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '17,2' or '2,17')")
+                                        self.board = original_board
+                                        self.turn = original_turn
+                                        return False
+                        
+                        # NOTE: Check that we're not overlapping with existing tiles (except when using '.')
+                        if original_board[current_row][current_col] != ' ':
+                            # Trying to place a tile where one already exists
+                            print(f"Error: Cannot place tile at {chr(ord('A')+current_col)}{current_row+1}: position already occupied")
+                            self.board = original_board
+                            self.turn = original_turn
+                            return False
+                        
+                        # Only add to new_tiles if this position was empty in original board
+                        if original_board[current_row][current_col] == ' ':
+                            new_tiles.append((current_row, current_col, tile_key))
                         # Place the tile directly (no rack checking)
                         self.board[current_row][current_col] = tile_key
                     else:
@@ -197,6 +298,18 @@ class AMathGame:
                     current_row += 1
             else:
                 break
+        
+        # Validate the play (use original board for validation, not the modified one)
+        if new_tiles:
+            is_valid, error_message = validate_play(
+                original_board, new_tiles, self.turn, self.chars
+            )
+            if not is_valid:
+                # Invalid play - restore board and return False
+                print(f"Invalid play: {error_message}")
+                self.board = original_board
+                self.turn = original_turn
+                return False
         
         # Success - advance turn and save state
         self.turn += 1
