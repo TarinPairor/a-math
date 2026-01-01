@@ -68,14 +68,21 @@ def process_command(game: AMathGame, command: str) -> bool:
             print(f"No tile at {coord}")
     elif cmd == 'rack':
         if len(parts) < 2:
-            print("Usage: rack <tiles>")
+            print("Usage: rack <tiles> or rack --random")
             print("Example: rack 0,1,2,3,4,5,6,7 or rack 0,+,*,/,=,?,21,22")
+            print("         rack --random (randomizes rack from bag)")
             print("(must provide exactly 8 tiles - can use indices or aliases)")
             return True
-        # Join all parts after 'rack' to handle comma-separated tiles
-        tiles_str = ' '.join(parts[1:])
-        if game.set_rack(tiles_str):
-            game.show_state()
+        
+        # Check for --random flag
+        if parts[1] == '--random':
+            if game.set_rack_random():
+                game.show_state()
+        else:
+            # Join all parts after 'rack' to handle comma-separated tiles
+            tiles_str = ' '.join(parts[1:])
+            if game.set_rack(tiles_str):
+                game.show_state()
     elif cmd == 'gen':
         # Generate all valid moves
         moves = generate_moves(game.board, game.rack, game.turn, game.chars)
@@ -97,7 +104,7 @@ def main():
     game = AMathGame()
     
     print("a-math game CLI")
-    print("Commands: new, commit <coord> <tiles>, n, p, turn <n>, s, reset, get <coord>, rack <tiles>, gen")
+    print("Commands: new, commit <coord> <tiles>, n, p, turn <n>, s, reset, get <coord>, rack <tiles>|--random, gen")
     print("Type 'quit' or 'exit' to exit\n")
     
     while True:

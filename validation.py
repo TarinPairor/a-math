@@ -263,6 +263,12 @@ def validate_play(
     if turn == 0 and not has_valid_equation:
         return False, f"First play must form a valid equation with an equals sign. Single tiles or sequences without equals signs are not allowed."
     
+    # NOTE: Validate that multi-digit number tiles (10-20) are not adjacent to other number tiles
+    for r, c, tile in new_tiles:
+        error = validate_multi_digit_adjacency(temp_board, r, c, tile, chars)
+        if error:
+            return False, error, parsed_equations if debug else None
+    
     # NOTE: Validate number formation rules
     for r, c, tile in new_tiles:
         if is_number_tile(tile) or is_blank_tile(tile):
@@ -600,6 +606,52 @@ def evaluate_expression(tokens: List[str]) -> Tuple[bool, float]:
             i += 1
     
     return True, final_value
+
+
+def validate_multi_digit_adjacency(
+    board: List[List[str]],
+    row: int,
+    col: int,
+    tile: str,
+    chars: Dict
+) -> Optional[str]:
+    """
+    Validate that multi-digit number tiles (10-20) are not adjacent to other number tiles.
+    
+    NOTE: Multi-digit number tiles (10-20) cannot be placed adjacent to other number tiles.
+    Must use single digits to form numbers (e.g., '1,7,2' instead of '17,2' or '2,17').
+    """
+    # Get the actual tile value (handle blank tiles)
+    if is_blank_tile(tile):
+        tile_value = get_blank_value(tile)
+        if tile_value not in NUMBER_TILES:
+            return None  # Not a number blank, skip
+    else:
+        tile_value = tile
+    
+    # Check if this is a multi-digit number tile (10-20)
+    if tile_value not in NUMBER_TILES or len(tile_value) <= 1:
+        return None  # Not a multi-digit tile, skip
+    
+    # Check all 4 adjacent positions
+    neighbors = [(row-1, col), (row+1, col), (row, col-1), (row, col+1)]
+    for nr, nc in neighbors:
+        if 0 <= nr < 15 and 0 <= nc < 15:
+            neighbor = board[nr][nc]
+            if neighbor != ' ':
+                # Get neighbor value (handle blank tiles)
+                if is_blank_tile(neighbor):
+                    neighbor_value = get_blank_value(neighbor)
+                    if neighbor_value not in NUMBER_TILES:
+                        continue  # Not a number, skip
+                else:
+                    neighbor_value = neighbor
+                
+                # Check if neighbor is a number tile
+                if neighbor_value in NUMBER_TILES:
+                    return f"Multi-digit number tile '{tile_value}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '2,17' or '17,2')"
+    
+    return None
 
 
 def validate_number_formation(

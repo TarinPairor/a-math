@@ -5,7 +5,9 @@ Generates all valid moves from the current rack.
 
 from typing import List, Tuple, Optional
 from itertools import combinations, permutations, product
-from validation import validate_play, BLANK_VALUES
+from validation import validate_play, BLANK_VALUES, NUMBER_TILES
+from tqdm import tqdm
+
 
 
 def format_coord(row: int, col: int, is_horizontal: bool) -> str:
@@ -44,16 +46,24 @@ def expand_rack_with_blanks(rack: List[str], limit: int = 10) -> List[List[str]]
         # No blanks, return original rack
         return [rack]
     
-    # Limit blank values to most common/useful ones to avoid combinatorial explosion
-    # Try numbers 0-9, common operators, and a few higher numbers
-    limited_blank_values = [str(i) for i in range(10)] + ['+', '-', '×', '÷', '='] + ['10', '11', '12']
+    # Try all valid blank values (0-20, +, -, ×, ÷, =)
+    # For single blank, try all values. For multiple blanks, limit combinations.
+    all_blank_values = list(BLANK_VALUES)
     
-    # Generate all combinations of blank values (but limit if too many)
-    blank_value_lists = [limited_blank_values for _ in blank_indices]
-    
-    # If we have multiple blanks, limit the combinations
-    if len(blank_indices) > 1:
-        # For multiple blanks, only try a subset
+    if len(blank_indices) == 1:
+        # Single blank - try all possible values
+        for blank_value in all_blank_values:
+            expanded_rack = rack[:]
+            expanded_rack[blank_indices[0]] = f"?{blank_value}"
+            expanded_racks.append(expanded_rack)
+    else:
+        # Multiple blanks - limit combinations to avoid explosion
+        # Prioritize common values: 0-9, operators, then higher numbers
+        common_values = [str(i) for i in range(10)] + ['+', '-', '×', '÷', '=']
+        less_common_values = [str(i) for i in range(10, 21)]
+        
+        # Try common values first, then mix in less common ones
+        blank_value_lists = [common_values for _ in blank_indices]
         count = 0
         for blank_combo in product(*blank_value_lists):
             if count >= limit:
@@ -63,12 +73,6 @@ def expand_rack_with_blanks(rack: List[str], limit: int = 10) -> List[List[str]]
                 expanded_rack[blank_idx] = f"?{blank_combo[idx]}"
             expanded_racks.append(expanded_rack)
             count += 1
-    else:
-        # Single blank - try all limited values
-        for blank_value in limited_blank_values:
-            expanded_rack = rack[:]
-            expanded_rack[blank_indices[0]] = f"?{blank_value}"
-            expanded_racks.append(expanded_rack)
     
     return expanded_racks
 
@@ -137,7 +141,7 @@ def try_move(
         if tile is not None:
             new_tiles.append((r, c, tile))
     
-    # Validate the play
+    # Validate the play - validate_play now handles multi-digit adjacency check
     if new_tiles:
         # validate_play returns (is_valid, error_message, parsed_equations)
         is_valid, error_message, _ = validate_play(
@@ -160,27 +164,29 @@ def generate_moves(
 ) -> List[Tuple[str, str, int]]:
     """
     Generate all valid moves from the current rack.
+    Prioritizes longer moves first, then generates up to 100 moves sorted by length.
     
     Returns:
         List of (coordinate, move_string, num_tiles) tuples, sorted by num_tiles (descending)
     """
     valid_moves = []
-    max_moves = 100  # Limit total moves to return
+    max_moves = 10  # Limit total moves to return
     unique_move_keys = set()  # Track unique moves for early exit
     
-    # Expand rack to handle blank tiles
-    expanded_racks = expand_rack_with_blanks(rack)
+    # Expand rack to handle blank tiles - try all blank values for single blank
+    expanded_racks = expand_rack_with_blanks(rack, limit=10)  # Increase limit for better coverage
     
     # For turn 0, must cover center square (7, 7)
     if turn == 0:
-        for expanded_rack in expanded_racks:
+        # Start with longest moves first (8 tiles down to 1)
+        for num_tiles in tqdm(range(min(len(rack), 8), 0, -1), desc="Tile count", leave=False):
             if len(unique_move_keys) >= max_moves:
                 break
-            # Try all combinations and placements that include center
-            for num_tiles in range(1, min(len(expanded_rack) + 1, 9)):
+            for expanded_rack in tqdm(expanded_racks, desc=f"Blank combos ({num_tiles} tiles)", leave=False, disable=len(expanded_racks) <= 1):
                 if len(unique_move_keys) >= max_moves:
                     break
-                for tile_combo in combinations(expanded_rack, num_tiles):
+                tile_combos = list(combinations(expanded_rack, num_tiles))
+                for tile_combo in tqdm(tile_combos, desc=f"Combinations", leave=False, disable=len(tile_combos) < 10):
                     if len(unique_move_keys) >= max_moves:
                         break
                     for tile_perm in set(permutations(tile_combo)):
@@ -228,21 +234,22 @@ def generate_moves(
                         if 0 <= nr < 15 and 0 <= nc < 15 and board[nr][nc] == ' ':
                             adjacent_positions.add((nr, nc))
         
-        for expanded_rack in expanded_racks:
+        # Start with longest moves first (8 tiles down to 1)
+        for num_tiles in tqdm(range(min(len(rack), 8), 0, -1), desc="Tile count", leave=False):
             if len(unique_move_keys) >= max_moves:
                 break
-            # Try all combinations
-            for num_tiles in range(1, min(len(expanded_rack) + 1, 9)):
+            for expanded_rack in tqdm(expanded_racks, desc=f"Blank combos ({num_tiles} tiles)", leave=False, disable=len(expanded_racks) <= 1):
                 if len(unique_move_keys) >= max_moves:
                     break
-                for tile_combo in combinations(expanded_rack, num_tiles):
+                tile_combos = list(combinations(expanded_rack, num_tiles))
+                for tile_combo in tqdm(tile_combos, desc=f"Combinations", leave=False, disable=len(tile_combos) < 10):
                     if len(unique_move_keys) >= max_moves:
                         break
                     for tile_perm in set(permutations(tile_combo)):
                         if len(unique_move_keys) >= max_moves:
                             break
                         # Try each adjacent position as a starting point
-                        for start_row, start_col in adjacent_positions:
+                        for start_row, start_col in tqdm(adjacent_positions, desc="Positions", leave=False, disable=len(adjacent_positions) < 5):
                             if len(unique_move_keys) >= max_moves:
                                 break
                             # Try horizontal
@@ -269,7 +276,7 @@ def generate_moves(
                                         unique_move_keys.add(move_key)
                                         valid_moves.append((coord, move_str, num_tiles))
     
-    # Moves are already deduplicated, just sort and limit
+    # Moves are already deduplicated and collected in order (longest first)
     # Sort by number of tiles (descending), then by coordinate
     sorted_moves = sorted(valid_moves, key=lambda x: (-x[2], x[0], x[1]))
     

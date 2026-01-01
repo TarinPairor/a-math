@@ -252,24 +252,24 @@ class AMathGame:
                                 prev_id = identifiers[current_idx - 1].strip()
                                 if prev_id != '.' and not (prev_id.startswith('(') and prev_id.endswith(')')):
                                     prev_tile = self._resolve_tile(prev_id)
-                                    if prev_tile and prev_tile in NUMBER_TILES:
-                                        # Invalid: number tile followed by multi-digit tile
-                                        print(f"Error: Multi-digit number tile '{tile_key}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '2,17' or '17,2')")
-                                        self.board = original_board
-                                        self.turn = original_turn
-                                        return False
+                                    # if prev_tile and prev_tile in NUMBER_TILES:
+                                    #     # Invalid: number tile followed by multi-digit tile
+                                    #     print(f"Error: Multi-digit number tile '{tile_key}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '2,17' or '17,2')")
+                                    #     self.board = original_board
+                                    #     self.turn = original_turn
+                                    #     return False
                             
                             # Check if next identifier is also a number tile
                             if current_idx + 1 < len(identifiers):
                                 next_id = identifiers[current_idx + 1].strip()
                                 if next_id != '.' and not (next_id.startswith('(') and next_id.endswith(')')):
                                     next_tile = self._resolve_tile(next_id)
-                                    if next_tile and next_tile in NUMBER_TILES:
-                                        # Invalid: multi-digit tile followed by number tile
-                                        print(f"Error: Multi-digit number tile '{tile_key}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '17,2' or '2,17')")
-                                        self.board = original_board
-                                        self.turn = original_turn
-                                        return False
+                                    # if next_tile and next_tile in NUMBER_TILES:
+                                    #     # Invalid: multi-digit tile followed by number tile
+                                    #     print(f"Error: Multi-digit number tile '{tile_key}' cannot be used adjacent to number tiles. Use single digits separated by commas (e.g., '1,7,2' instead of '17,2' or '2,17')")
+                                    #     self.board = original_board
+                                    #     self.turn = original_turn
+                                    #     return False
                         
                         # NOTE: Check that we're not overlapping with existing tiles (except when using '.')
                         if original_board[current_row][current_col] != ' ':
@@ -374,6 +374,31 @@ class AMathGame:
             return False
         
         self.rack = new_rack
+        
+        # Save state
+        self._save_state()
+        return True
+    
+    def set_rack_random(self) -> bool:
+        """
+        Randomize the rack by drawing 8 tiles from the bag.
+        Returns True if successful, False if there were errors (e.g., not enough tiles in bag)
+        """
+        if self.current_state_index < len(self.history) - 1:
+            # Not at latest state, restore to latest first
+            self._restore_state(len(self.history) - 1)
+        
+        # Ensure bag is initialized
+        if not self.bag:
+            self._initialize_bag()
+        
+        # Check if there are enough tiles in the bag
+        if len(self.bag) < 8:
+            print(f"Error: Not enough tiles in bag. Bag has {len(self.bag)} tiles, need 8.")
+            return False
+        
+        # Randomly sample 8 tiles from the bag without removing them
+        self.rack = random.sample(self.bag, 8)
         
         # Save state
         self._save_state()
