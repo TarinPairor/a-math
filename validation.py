@@ -111,9 +111,18 @@ def validate_play(
     
     # NOTE: Validate all equations formed (horizontal and vertical)
     # NOTE: Any sequence of tiles (with new tiles) must form a valid equation with an equals sign
+    new_positions = {(r, c) for r, c, _ in new_tiles}
+    
+    # Track which rows/columns have been validated with a valid equation
+    validated_rows = set()
+    validated_cols = set()
+    
+    # For turn 0, we need to ensure at least one valid equation is formed
+    # So we check all sequences first, then validate at the end
+    has_valid_equation = False
+    
     # Check horizontal sequences - only check rows that have new tiles
     checked_rows = set()
-    new_positions = {(r, c) for r, c, _ in new_tiles}
     for r, c, _ in new_tiles:
         if r not in checked_rows:
             checked_rows.add(r)
@@ -125,7 +134,11 @@ def validate_play(
                     is_valid, error = validate_equation(equation, chars)
                     if not is_valid:
                         return False, f"Invalid horizontal equation at row {r+1}: {error}"
-            else:
+                    # Mark this row as validated
+                    validated_rows.add(r)
+                    has_valid_equation = True
+            # Only check else branch if no valid equation was found
+            if r not in validated_rows:
                 # Check if there's a sequence without an equals sign that includes new tiles
                 # Extract the full sequence in this row
                 start_col = 0
@@ -142,10 +155,15 @@ def validate_play(
                             sequence.append((r, c_seq, temp_board[r][c_seq]))
                     
                     # If this sequence includes new tiles and has no equals sign, it's invalid
-                    if len(sequence) > 1 and any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
+                    # NOTE: For turn 0, we don't fail here - we check vertical too
+                    if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
                         has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
                         if not has_equals:
-                            return False, f"Invalid horizontal sequence at row {r+1}: sequence must contain an equals sign to form a valid equation"
+                            # For turn 0, don't fail yet - check vertical sequences first
+                            if turn == 0:
+                                pass  # Will check after vertical sequences
+                            elif len(sequence) > 1:
+                                return False, f"Invalid horizontal sequence at row {r+1}: sequence must contain an equals sign to form a valid equation"
     
     # Check vertical sequences - only check columns that have new tiles
     checked_cols = set()
@@ -160,7 +178,10 @@ def validate_play(
                     is_valid, error = validate_equation(equation, chars)
                     if not is_valid:
                         return False, f"Invalid vertical equation at column {chr(ord('A')+c)}: {error}"
-            else:
+                    # Mark this column as validated
+                    validated_cols.add(c)
+            # Only check else branch if no valid equation was found
+            if c not in validated_cols:
                 # Check if there's a sequence without an equals sign that includes new tiles
                 # Extract the full sequence in this column
                 start_row = 0
@@ -177,10 +198,57 @@ def validate_play(
                             sequence.append((r_seq, c, temp_board[r_seq][c]))
                     
                     # If this sequence includes new tiles and has no equals sign, it's invalid
-                    if len(sequence) > 1 and any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
+                    # NOTE: For turn 0, check if we have a valid equation in either direction
+                    if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
                         has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
                         if not has_equals:
-                            return False, f"Invalid vertical sequence at column {chr(ord('A')+c)}: sequence must contain an equals sign to form a valid equation"
+                            # For turn 0, check if we have a valid equation in horizontal direction
+                            if turn == 0:
+                                if not has_valid_equation:
+                                    return False, f"First play must form a valid equation with an equals sign. Single tiles or sequences without equals signs are not allowed."
+                            elif len(sequence) > 1:
+                                return False, f"Invalid vertical sequence at column {chr(ord('A')+c)}: sequence must contain an equals sign to form a valid equation"
+    
+    # For turn 0, ensure at least one valid equation was found
+    if turn == 0 and not has_valid_equation and validated_cols == set():
+        # Check if any sequence (horizontal or vertical) has an equals sign
+        all_sequences_have_equals = True
+        for r, c, _ in new_tiles:
+            # Check horizontal
+            start_col = 0
+            while start_col < 15 and temp_board[r][start_col] == ' ':
+                start_col += 1
+            if start_col < 15:
+                end_col = 14
+                while end_col >= 0 and temp_board[r][end_col] == ' ':
+                    end_col -= 1
+                sequence = []
+                for c_seq in range(start_col, end_col + 1):
+                    if temp_board[r][c_seq] != ' ':
+                        sequence.append((r, c_seq, temp_board[r][c_seq]))
+                if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
+                    has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
+                    if not has_equals:
+                        all_sequences_have_equals = False
+            # Check vertical
+            start_row = 0
+            while start_row < 15 and temp_board[start_row][c] == ' ':
+                start_row += 1
+            if start_row < 15:
+                end_row = 14
+                while end_row >= 0 and temp_board[end_row][c] == ' ':
+                    end_row -= 1
+                sequence = []
+                for r_seq in range(start_row, end_row + 1):
+                    if temp_board[r_seq][c] != ' ':
+                        sequence.append((r_seq, c, temp_board[r_seq][c]))
+                if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
+                    has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
+                    if not has_equals:
+                        all_sequences_have_equals = False
+        
+        if not all_sequences_have_equals:
+            return False, f"First play must form a valid equation with an equals sign. Single tiles or sequences without equals signs are not allowed."
     
     # NOTE: Validate number formation rules
     for r, c, tile in new_tiles:

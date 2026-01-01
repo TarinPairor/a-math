@@ -19,7 +19,7 @@ def process_command(game: AMathGame, command: str) -> bool:
         return False
     elif cmd == 'new':
         game.new_game()
-        game.show_state()
+        # game.show_state()
     elif cmd == 'commit':
         if len(parts) < 3:
             print("Usage: commit <coord> <tiles>")
@@ -53,9 +53,6 @@ def process_command(game: AMathGame, command: str) -> bool:
         except ValueError:
             print("Invalid turn number")
     elif cmd == 's':
-        game.show_state()
-    elif cmd == 'reset':
-        game.new_game()
         game.show_state()
     elif cmd == 'get':
         if len(parts) < 2:
