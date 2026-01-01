@@ -98,9 +98,13 @@ def generate_equation_patterns(num_tiles: int) -> List[List[str]]:
     patterns = []
     
     # Must have at least one = sign
-    # Minimum pattern: num op num = num (4 tiles)
-    if num_tiles < 4:
+    # Minimum pattern: num = num (3 tiles) or num op num = num (4 tiles)
+    if num_tiles < 3:
         return []
+    
+    # Special case: num = num (3 tiles)
+    if num_tiles == 3:
+        return [['num', '=', 'num']]
     
     # Try different equation structures: [optional -] left_side = [optional -] right_side
     for left_len in range(1, num_tiles - 2):  # Need at least 1 for left, 1 for =, 1 for right
@@ -279,15 +283,17 @@ def fill_pattern_with_tiles(pattern: List[str], available_tiles: List[str]) -> L
     return sequences
 
 
-def expand_compound_tiles(tile_sequence: List[str]) -> List[List[str]]:
+def expand_compound_tiles(tile_sequence: List[str]) -> Tuple[List[List[str]], List[dict]]:
     """
     Expand compound tiles (×/÷, +/-) to all possible values.
-    Returns list of sequences with compounds expanded.
+    Returns tuple of:
+    - List of sequences with compounds expanded
+    - List of compound maps (one per expanded sequence) mapping expanded value to compound format
     """
     compound_indices = [i for i, t in enumerate(tile_sequence) if t in COMPOUND_TILES]
     
     if not compound_indices:
-        return [tile_sequence]
+        return [tile_sequence], [{}]
     
     expanded_sequences = []
     compound_value_lists = []
@@ -297,19 +303,29 @@ def expand_compound_tiles(tile_sequence: List[str]) -> List[List[str]]:
         elif tile_sequence[idx] == '+/-':
             compound_value_lists.append(['+', '-'])
     
+    expanded_compound_maps = []
     for combo in product(*compound_value_lists):
         expanded = tile_sequence[:]
+        compound_map = {}
         for i, idx in enumerate(compound_indices):
-            expanded[idx] = combo[i]
+            expanded_value = combo[i]
+            expanded[idx] = expanded_value
+            # Map the expanded value to its compound format (use +/- or ×/÷ format)
+            if tile_sequence[idx] == '×/÷':
+                compound_map[expanded_value] = '×/÷'
+            elif tile_sequence[idx] == '+/-':
+                compound_map[expanded_value] = '+/-'
         expanded_sequences.append(expanded)
+        expanded_compound_maps.append(compound_map)
     
-    return expanded_sequences
+    return expanded_sequences, expanded_compound_maps
 
 
-def format_move_tiles(positions_used: List[Tuple[int, int, Optional[str]]]) -> str:
+def format_move_tiles(positions_used: List[Tuple[int, int, Optional[str]]], compound_map: dict = None) -> str:
     """
     Format move tiles as comma-separated string, using '.' for existing tiles.
     positions_used: List of (row, col, tile) tuples where tile is None for existing tiles
+    compound_map: Dict mapping tile value to compound tile format (e.g., {'+': '(+,-)', '-': '(+,-)'})
     Returns the formatted string.
     """
     result = []
@@ -321,7 +337,12 @@ def format_move_tiles(positions_used: List[Tuple[int, int, Optional[str]]]) -> s
         else:
             # New tile - convert to identifier
             identifier = tile_to_identifier(tile)
-            result.append(identifier)
+            
+            # Check if this tile came from a compound tile
+            if compound_map and tile in compound_map:
+                result.append(compound_map[tile])
+            else:
+                result.append(identifier)
     
     return ','.join(result)
 
@@ -333,7 +354,8 @@ def try_move(
     start_col: int,
     is_horizontal: bool,
     turn: int,
-    chars: dict
+    chars: dict,
+    compound_map: dict = None
 ) -> Optional[Tuple[str, str]]:
     """
     Try to place tiles at the given position and orientation.
@@ -378,7 +400,7 @@ def try_move(
         )
         if is_valid:
             # Format the move string
-            move_str = format_move_tiles(positions_used)
+            move_str = format_move_tiles(positions_used, compound_map)
             coord = format_coord(start_row, start_col, is_horizontal)
             return (coord, move_str)
     
@@ -407,8 +429,8 @@ def generate_moves(
     
     # For turn 0, must cover center square (7, 7)
     if turn == 0:
-        # Start with longest moves first (8 tiles down to 4, minimum for equation)
-        for num_tiles in tqdm(range(min(len(rack), 8), 3, -1), desc="Tile count", leave=False):
+        # Start with longest moves first (8 tiles down to 3, minimum for equation: num=num)
+        for num_tiles in tqdm(range(min(len(rack), 8), 2, -1), desc="Tile count", leave=False):
             if len(unique_move_keys) >= max_moves:
                 break
             
@@ -431,9 +453,9 @@ def generate_moves(
                             break
                         
                         # Expand compound tiles (×/÷, +/-)
-                        expanded_seqs = expand_compound_tiles(tile_seq)
+                        expanded_seqs, compound_maps = expand_compound_tiles(tile_seq)
                         
-                        for expanded_seq in expanded_seqs:
+                        for expanded_seq, compound_map in zip(expanded_seqs, compound_maps):
                             if len(unique_move_keys) >= max_moves:
                                 break
                             
@@ -473,7 +495,7 @@ def generate_moves(
                                     start_col = 7 - offset
                                     if start_col >= 0 and start_col + len(tile_perm) <= 15:
                                         move_result = try_move(
-                                            board, list(tile_perm), 7, start_col, True, turn, chars
+                                            board, list(tile_perm), 7, start_col, True, turn, chars, compound_map
                                         )
                                         if move_result:
                                             coord, move_str = move_result
@@ -486,7 +508,7 @@ def generate_moves(
                                     start_row = 7 - offset
                                     if start_row >= 0 and start_row + len(tile_perm) <= 15:
                                         move_result = try_move(
-                                            board, list(tile_perm), start_row, 7, False, turn, chars
+                                            board, list(tile_perm), start_row, 7, False, turn, chars, compound_map
                                         )
                                         if move_result:
                                             coord, move_str = move_result
@@ -535,9 +557,9 @@ def generate_moves(
                                 break
                             
                             # Expand compound tiles (×/÷, +/-)
-                            expanded_seqs = expand_compound_tiles(tile_seq)
+                            expanded_seqs, compound_maps = expand_compound_tiles(tile_seq)
                             
-                            for expanded_seq in expanded_seqs:
+                            for expanded_seq, compound_map in zip(expanded_seqs, compound_maps):
                                 if len(unique_move_keys) >= max_moves:
                                     break
                                 
@@ -571,7 +593,7 @@ def generate_moves(
                                         # Try horizontal
                                         if start_col + len(tile_perm) <= 15:
                                             move_result = try_move(
-                                                board, list(tile_perm), start_row, start_col, True, turn, chars
+                                                board, list(tile_perm), start_row, start_col, True, turn, chars, compound_map
                                             )
                                             if move_result:
                                                 coord, move_str = move_result
@@ -583,7 +605,7 @@ def generate_moves(
                                         # Try vertical
                                         if start_row + len(tile_perm) <= 15:
                                             move_result = try_move(
-                                                board, list(tile_perm), start_row, start_col, False, turn, chars
+                                                board, list(tile_perm), start_row, start_col, False, turn, chars, compound_map
                                             )
                                             if move_result:
                                                 coord, move_str = move_result

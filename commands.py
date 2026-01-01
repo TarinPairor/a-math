@@ -4,6 +4,85 @@ from game import AMathGame
 from ui import show_state
 from tiles import get_tile_display, resolve_tile
 from generator import generate_moves
+from typing import List
+
+
+def calculate_leave(rack: List[str], move_str: str) -> str:
+    """
+    Calculate which tiles from the rack are left over after a move.
+    
+    Args:
+        rack: Original rack tiles
+        move_str: Move string like "12,×,(6),=,3,(+,-),6,9" where "." means existing tile
+    
+    Returns:
+        String of tiles left in rack (space-separated), with compound tiles shown as "(+,-)" or "(×,÷)"
+    """
+    # Parse move string to get tiles used - handle compound tiles with commas inside parentheses
+    used_tiles = []
+    i = 0
+    parts = move_str.split(',')
+    
+    while i < len(parts):
+        tile = parts[i].strip()
+        if tile == '.':
+            i += 1
+            continue  # Existing tile on board, not from rack
+        
+        # Check if this is part of a compound tile like "(+,-)" that was split
+        if tile.startswith('(') and not tile.endswith(')'):
+            # Compound tile like "(+,-)" - need to combine with next part
+            if i + 1 < len(parts):
+                next_part = parts[i + 1].strip()
+                if next_part.endswith(')'):
+                    # Combine: "(+" + "-)" = "(+,-)"
+                    tile = tile + ',' + next_part
+                    i += 2  # Skip both parts
+                else:
+                    # Malformed, just use current part
+                    i += 1
+            else:
+                # No next part, just use current
+                i += 1
+        else:
+            i += 1
+        
+        # Now process the tile (which may be combined)
+        if tile.startswith('(') and tile.endswith(')'):
+            tile_content = tile[1:-1]  # Remove parentheses
+            if ',' in tile_content:
+                # Old compound tile format like "(+,-)" or "(×,÷)" - convert to +/- or ×/÷
+                if '+,-' in tile_content or '+, -' in tile_content:
+                    used_tiles.append('+/-')
+                elif '×,÷' in tile_content or '×, ÷' in tile_content:
+                    used_tiles.append('×/÷')
+                else:
+                    # Regular blank tile - represented as "?" in rack
+                    used_tiles.append('?')
+            else:
+                # Blank tile - represented as "?" in rack
+                used_tiles.append('?')
+        elif tile in ['+/-', '×/÷']:
+            # Compound tile in new format
+            used_tiles.append(tile)
+        else:
+            # Regular tile - use as-is
+            used_tiles.append(tile)
+    
+    # Count tiles used
+    rack_copy = rack.copy()
+    for used_tile in used_tiles:
+        if used_tile in rack_copy:
+            rack_copy.remove(used_tile)
+    
+    # Format leave with compound tiles shown properly (use +/- or ×/÷ format)
+    formatted_leave = []
+    for tile in rack_copy:
+        # Keep compound tiles as-is (they're already in the correct format)
+        formatted_leave.append(tile)
+    
+    # Return as comma-separated string (same format as move)
+    return ','.join(formatted_leave) if formatted_leave else ''
 
 
 def process_command(game: AMathGame, command: str) -> bool:
@@ -89,8 +168,10 @@ def process_command(game: AMathGame, command: str) -> bool:
         if moves:
             print()
             for idx, (coord, move_str, num_tiles) in enumerate(moves, 1):
-                # Format: idx, coordinate, move
-                print(f"{idx:3}: {coord:<4} {move_str}")
+                # Calculate leave (tiles remaining)
+                leave = calculate_leave(game.rack, move_str)
+                # Format: idx: coord move_str leave (keep commas in move string)
+                print(f"{idx:3}: {coord:<4} {move_str:<15} {leave}")
         else:
             print("No valid moves found")
     else:
