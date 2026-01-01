@@ -3,6 +3,7 @@
 from game import AMathGame
 from ui import show_state
 from tiles import get_tile_display, resolve_tile
+from generator import generate_moves
 
 
 def process_command(game: AMathGame, command: str) -> bool:
@@ -75,6 +76,16 @@ def process_command(game: AMathGame, command: str) -> bool:
         tiles_str = ' '.join(parts[1:])
         if game.set_rack(tiles_str):
             game.show_state()
+    elif cmd == 'gen':
+        # Generate all valid moves
+        moves = generate_moves(game.board, game.rack, game.turn, game.chars)
+        if moves:
+            print()
+            for idx, (coord, move_str, num_tiles) in enumerate(moves, 1):
+                # Format: idx, coordinate, move
+                print(f"{idx:3}: {coord:<4} {move_str}")
+        else:
+            print("No valid moves found")
     else:
         print(f"Unknown command: {cmd}")
     
@@ -86,7 +97,7 @@ def main():
     game = AMathGame()
     
     print("a-math game CLI")
-    print("Commands: new, commit <coord> <tiles>, n, p, turn <n>, s, reset, get <coord>, rack <tiles>")
+    print("Commands: new, commit <coord> <tiles>, n, p, turn <n>, s, reset, get <coord>, rack <tiles>, gen")
     print("Type 'quit' or 'exit' to exit\n")
     
     while True:

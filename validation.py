@@ -53,8 +53,9 @@ def validate_play(
     new_tiles: List[Tuple[int, int, str]],  # (row, col, tile)
     turn: int,
     chars: Dict,
-    is_horizontal: bool  # True if play is horizontal, False if vertical
-) -> Tuple[bool, Optional[str]]:
+    is_horizontal: bool,  # True if play is horizontal, False if vertical
+    debug: bool = False  # If True, return parsed equations for debugging
+) -> Tuple[bool, Optional[str], Optional[List[Tuple[str, List[Tuple[int, int, str]]]]]]:
     """
     Validate a play according to all game rules.
     
@@ -65,14 +66,15 @@ def validate_play(
         chars: Character definitions from chars.json
     
     Returns:
-        (is_valid, error_message) tuple
+        (is_valid, error_message, parsed_equations) tuple
     """
+    parsed_equations = []  # For debugging: list of (direction, sequence) tuples
     
     # NOTE: Starting player (turn 0) must cover center square
     if turn == 0:
         covers_center = any((r, c) == CENTER_SQUARE for r, c, _ in new_tiles)
         if not covers_center:
-            return False, "First play must cover the center square (H8)"
+            return False, "First play must cover the center square (H8)", None
     
     # NOTE: Subsequent plays must touch at least one existing tile
     # NOTE: New tiles must not overlap with existing tiles
@@ -80,7 +82,7 @@ def validate_play(
         # Check that new tiles don't overlap with existing tiles
         for r, c, _ in new_tiles:
             if board[r][c] != ' ':
-                return False, f"Cannot place tile at {chr(ord('A')+c)}{r+1}: position already occupied"
+                return False, f"Cannot place tile at {chr(ord('A')+c)}{r+1}: position already occupied", None
         
         # Check that at least one new tile touches an existing tile
         # Use the original board (before new tiles are placed) to check for existing neighbors
@@ -99,7 +101,7 @@ def validate_play(
                 break
         
         if not has_existing_neighbor:
-            return False, "Play must touch at least one existing tile on the board"
+            return False, "Play must touch at least one existing tile on the board", None
     
     # Extract all affected rows and columns
     affected_rows = set(r for r, _, _ in new_tiles)
@@ -110,89 +112,152 @@ def validate_play(
     for r, c, tile in new_tiles:
         temp_board[r][c] = tile
     
-    # NOTE: Validate equation in the direction of the play only
-    # NOTE: The play direction is determined by the coordinate format (h8 = vertical, 8h = horizontal)
+    # NOTE: Validate ALL equations formed (horizontal and vertical) that include new tiles
+    # NOTE: Check all rows and columns that have new tiles, extract full equation spans until empty spots
+    # NOTE: ALL newly created equations must be valid
     new_positions = {(r, c) for r, c, _ in new_tiles}
     has_valid_equation = False
     
-    if is_horizontal:
-        # Horizontal play - validate horizontal equations only
-        checked_rows = set()
-        for r, c, _ in new_tiles:
-            if r not in checked_rows:
-                checked_rows.add(r)
-                # Extract equation from this row
-                equation = extract_equation(temp_board, r, None, True)
-                if equation and len(equation) > 1:  # Must have at least 2 tiles
-                    # Make sure this equation includes at least one of our new tiles
-                    if any((eq_r, eq_c) in new_positions for eq_r, eq_c, _ in equation):
-                        is_valid, error = validate_equation(equation, chars)
-                        if not is_valid:
-                            return False, f"Invalid horizontal equation at row {r+1}: {error}"
-                        has_valid_equation = True
+    # Check all horizontal equations that include new tiles
+    checked_rows = set()
+    for r, c, _ in new_tiles:
+        if r not in checked_rows:
+            checked_rows.add(r)
+            # Extract contiguous sequences that include new tiles
+            # Find all contiguous sequences in this row
+            sequences_in_row = []
+            current_sequence = []
+            for c_seq in range(15):
+                if temp_board[r][c_seq] != ' ':
+                    current_sequence.append((r, c_seq, temp_board[r][c_seq]))
                 else:
-                    # Check if there's a sequence without an equals sign that includes new tiles
-                    # Extract the full sequence in this row
-                    start_col = 0
-                    while start_col < 15 and temp_board[r][start_col] == ' ':
-                        start_col += 1
-                    if start_col < 15:
-                        end_col = 14
-                        while end_col >= 0 and temp_board[r][end_col] == ' ':
-                            end_col -= 1
-                        # Extract all tiles in this range
-                        sequence = []
-                        for c_seq in range(start_col, end_col + 1):
-                            if temp_board[r][c_seq] != ' ':
-                                sequence.append((r, c_seq, temp_board[r][c_seq]))
-                        
-                        # If this sequence includes new tiles and has no equals sign, it's invalid
-                        if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
-                            has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
-                            if not has_equals:
-                                if turn == 0:
-                                    return False, f"First play must form a valid equation with an equals sign. Single tiles or sequences without equals signs are not allowed."
-                                elif len(sequence) > 1:
-                                    return False, f"Invalid horizontal sequence at row {r+1}: sequence must contain an equals sign to form a valid equation"
-    else:
-        # Vertical play - validate vertical equations only
-        checked_cols = set()
-        for r, c, _ in new_tiles:
-            if c not in checked_cols:
-                checked_cols.add(c)
-                # Extract equation from this column
-                equation = extract_equation(temp_board, None, c, False)
-                if equation and len(equation) > 1:  # Must have at least 2 tiles
-                    # Make sure this equation includes at least one of our new tiles
-                    if any((eq_r, eq_c) in new_positions for eq_r, eq_c, _ in equation):
-                        is_valid, error = validate_equation(equation, chars)
-                        if not is_valid:
-                            return False, f"Invalid vertical equation at column {chr(ord('A')+c)}: {error}"
-                        has_valid_equation = True
+                    if current_sequence:
+                        # Check if this sequence includes any new tiles
+                        if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in current_sequence):
+                            sequences_in_row.append(current_sequence)
+                        current_sequence = []
+            # Don't forget the last sequence if row doesn't end with empty
+            if current_sequence:
+                if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in current_sequence):
+                    sequences_in_row.append(current_sequence)
+            
+            # Validate each contiguous sequence that includes new tiles
+            for sequence in sequences_in_row:
+                
+                # NOTE: For turn 0, single tiles in the play direction are not allowed - must form a valid equation
+                # NOTE: Single tiles in the perpendicular direction are allowed
+                if len(sequence) == 1:
+                    if turn == 0 and is_horizontal:
+                        return False, f"First play must form a valid equation with an equals sign. Single tiles are not allowed.", parsed_equations if debug else None
+                    continue  # For turn > 0, or perpendicular direction, single tiles are allowed
+                
+                # NOTE: Validate perpendicular sequences if they have 2+ tiles
+                # Single tiles in perpendicular direction are allowed (already handled above)
+                # For vertical plays, horizontal sequences are in the perpendicular direction
+                # For horizontal plays, vertical sequences are in the perpendicular direction
+                if not is_horizontal:
+                    # This is a horizontal sequence (perpendicular to vertical play)
+                    # If it has 2+ tiles, validate it
+                    if len(sequence) >= 2:
+                        if debug:
+                            parsed_equations.append(("perpendicular-horizontal", sequence))
+                        has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
+                        if has_equals:
+                            # It's an equation - must be valid
+                            is_valid, error = validate_equation(sequence, chars)
+                            if not is_valid:
+                                return False, f"Invalid perpendicular horizontal equation at row {r+1}: {error}", parsed_equations if debug else None
+                        else:
+                            # No equals sign - invalid for multi-tile perpendicular sequences
+                            return False, f"Invalid perpendicular horizontal sequence at row {r+1}: sequence must contain an equals sign to form a valid equation", parsed_equations if debug else None
+                    continue
+                
+                # This is a horizontal sequence in a horizontal play - validate it
+                has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
+                if debug:
+                    parsed_equations.append(("horizontal", sequence))
+                if has_equals:
+                    # It's an equation - must be valid (already checked len >= 2)
+                    is_valid, error = validate_equation(sequence, chars)
+                    if not is_valid:
+                        return False, f"Invalid horizontal equation at row {r+1}: {error}", parsed_equations if debug else None
+                    has_valid_equation = True
                 else:
-                    # Check if there's a sequence without an equals sign that includes new tiles
-                    # Extract the full sequence in this column
-                    start_row = 0
-                    while start_row < 15 and temp_board[start_row][c] == ' ':
-                        start_row += 1
-                    if start_row < 15:
-                        end_row = 14
-                        while end_row >= 0 and temp_board[end_row][c] == ' ':
-                            end_row -= 1
-                        # Extract all tiles in this range
-                        sequence = []
-                        for r_seq in range(start_row, end_row + 1):
-                            if temp_board[r_seq][c] != ' ':
-                                sequence.append((r_seq, c, temp_board[r_seq][c]))
-                        
-                        # If this sequence includes new tiles and has no equals sign, it's invalid
-                        if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in sequence):
-                            has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
-                            if not has_equals:
-                                if turn == 0:
-                                    return False, f"First play must form a valid equation with an equals sign. Single tiles or sequences without equals signs are not allowed."
-                                elif len(sequence) > 1:
-                                    return False, f"Invalid vertical sequence at column {chr(ord('A')+c)}: sequence must contain an equals sign to form a valid equation"
+                    # No equals sign - invalid if it has multiple tiles
+                    if turn == 0:
+                        return False, f"First play must form a valid equation with an equals sign. Sequences without equals signs are not allowed.", parsed_equations if debug else None
+                    else:
+                        return False, f"Invalid horizontal sequence at row {r+1}: sequence must contain an equals sign to form a valid equation", parsed_equations if debug else None
+    
+    # Check all vertical equations that include new tiles
+    checked_cols = set()
+    for r, c, _ in new_tiles:
+        if c not in checked_cols:
+            checked_cols.add(c)
+            # Extract contiguous sequences that include new tiles
+            # Find all contiguous sequences in this column
+            sequences_in_col = []
+            current_sequence = []
+            for r_seq in range(15):
+                if temp_board[r_seq][c] != ' ':
+                    current_sequence.append((r_seq, c, temp_board[r_seq][c]))
+                else:
+                    if current_sequence:
+                        # Check if this sequence includes any new tiles
+                        if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in current_sequence):
+                            sequences_in_col.append(current_sequence)
+                        current_sequence = []
+            # Don't forget the last sequence if column doesn't end with empty
+            if current_sequence:
+                if any((seq_r, seq_c) in new_positions for seq_r, seq_c, _ in current_sequence):
+                    sequences_in_col.append(current_sequence)
+            
+            # Validate each contiguous sequence that includes new tiles
+            for sequence in sequences_in_col:
+                # NOTE: For turn 0, single tiles in the play direction are not allowed - must form a valid equation
+                # NOTE: Single tiles in the perpendicular direction are allowed
+                if len(sequence) == 1:
+                    if turn == 0 and not is_horizontal:
+                        return False, f"First play must form a valid equation with an equals sign. Single tiles are not allowed.", parsed_equations if debug else None
+                    continue  # For turn > 0, or perpendicular direction, single tiles are allowed
+                
+                # NOTE: Validate perpendicular sequences if they have 2+ tiles
+                # Single tiles in perpendicular direction are allowed (already handled above)
+                # For horizontal plays, vertical sequences are in the perpendicular direction
+                # For vertical plays, horizontal sequences are in the perpendicular direction
+                if is_horizontal:
+                    # This is a vertical sequence (perpendicular to horizontal play)
+                    # If it has 2+ tiles, validate it
+                    if len(sequence) >= 2:
+                        if debug:
+                            parsed_equations.append(("perpendicular-vertical", sequence))
+                        has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
+                        if has_equals:
+                            # It's an equation - must be valid
+                            is_valid, error = validate_equation(sequence, chars)
+                            if not is_valid:
+                                return False, f"Invalid perpendicular vertical equation at column {chr(ord('A')+c)}: {error}", parsed_equations if debug else None
+                        else:
+                            # No equals sign - invalid for multi-tile perpendicular sequences
+                            return False, f"Invalid perpendicular vertical sequence at column {chr(ord('A')+c)}: sequence must contain an equals sign to form a valid equation", parsed_equations if debug else None
+                    continue
+                
+                # This is a vertical sequence in a vertical play - validate it
+                has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
+                if debug:
+                    parsed_equations.append(("vertical", sequence))
+                if has_equals:
+                    # It's an equation - must be valid (already checked len >= 2)
+                    is_valid, error = validate_equation(sequence, chars)
+                    if not is_valid:
+                        return False, f"Invalid vertical equation at column {chr(ord('A')+c)}: {error}", parsed_equations if debug else None
+                    has_valid_equation = True
+                else:
+                    # No equals sign - invalid if it has multiple tiles
+                    if turn == 0:
+                        return False, f"First play must form a valid equation with an equals sign. Sequences without equals signs are not allowed.", parsed_equations if debug else None
+                    else:
+                        return False, f"Invalid vertical sequence at column {chr(ord('A')+c)}: sequence must contain an equals sign to form a valid equation", parsed_equations if debug else None
     
     # For turn 0, ensure at least one valid equation was found
     if turn == 0 and not has_valid_equation:
@@ -204,16 +269,16 @@ def validate_play(
             # Check if this forms a multi-digit number
             error = validate_number_formation(temp_board, r, c, chars)
             if error:
-                return False, error
+                return False, error, parsed_equations if debug else None
     
     # NOTE: Validate operator placement rules
     for r, c, tile in new_tiles:
         if is_operator_tile(tile) or is_blank_tile(tile):
             error = validate_operator_placement(temp_board, r, c, chars)
             if error:
-                return False, error
+                return False, error, parsed_equations if debug else None
     
-    return True, None
+    return True, None, parsed_equations if debug else None
 
 
 def extract_equation(
@@ -355,6 +420,12 @@ def validate_equation_sequence(tiles: List[str]) -> Tuple[bool, Optional[str]]:
     """
     if not tiles:
         return False, "Empty equation"
+    
+    # NOTE: Equation cannot start or end with an equals sign
+    if tiles[0] == '=':
+        return False, "Equation cannot start with an equals sign"
+    if tiles[-1] == '=':
+        return False, "Equation cannot end with an equals sign"
     
     # NOTE: Equation must contain at least one equals sign
     equals_count = tiles.count('=')
@@ -675,6 +746,7 @@ def validate_operator_placement(
         return None  # Not an operator
     
     # NOTE: Check for adjacent operators
+    # NOTE: Minus can be adjacent to = or other operators if it's making a negative number
     neighbors = [(row-1, col), (row+1, col), (row, col-1), (row, col+1)]
     for nr, nc in neighbors:
         if 0 <= nr < 15 and 0 <= nc < 15:
@@ -684,14 +756,29 @@ def validate_operator_placement(
                 if is_blank_tile(neighbor):
                     neighbor_value = get_blank_value(neighbor)
                     if neighbor_value in ['+', '-', '×', '÷', '=']:
-                        # NOTE: Operators cannot be adjacent (except minus at start for negative)
-                        if tile != '-' or not _is_at_start_of_expression(board, row, col):
-                            if neighbor_value != '-' or not _is_at_start_of_expression(board, nr, nc):
-                                return "Operators cannot be placed directly next to each other"
-                elif neighbor in ['+', '-', '×', '÷', '=']:
-                    if tile != '-' or not _is_at_start_of_expression(board, row, col):
-                        if neighbor != '-' or not _is_at_start_of_expression(board, nr, nc):
+                        # NOTE: Operators cannot be adjacent EXCEPT:
+                        # - Minus can be after = or other operators if making a negative number
+                        # - Minus can be at start of expression for negative numbers
+                        if neighbor_value == '=' or neighbor_value in ['+', '-', '×', '÷']:
+                            # If this is a minus making a negative number, it's OK
+                            if tile == '-' and _is_making_negative_number(board, row, col):
+                                continue
+                            # If neighbor is minus making a negative number, it's OK
+                            if neighbor_value == '-' and _is_making_negative_number(board, nr, nc):
+                                continue
+                            # Otherwise, operators are adjacent and invalid
                             return "Operators cannot be placed directly next to each other"
+                elif neighbor in ['+', '-', '×', '÷', '=']:
+                    # Same logic for non-blank operators
+                    if neighbor == '=' or neighbor in ['+', '-', '×', '÷']:
+                        # If this is a minus making a negative number, it's OK
+                        if tile == '-' and _is_making_negative_number(board, row, col):
+                            continue
+                        # If neighbor is minus making a negative number, it's OK
+                        if neighbor == '-' and _is_making_negative_number(board, nr, nc):
+                            continue
+                        # Otherwise, operators are adjacent and invalid
+                        return "Operators cannot be placed directly next to each other"
     
     # NOTE: Plus sign cannot be placed in front of a number (at start of expression)
     if tile == '+':
@@ -716,11 +803,16 @@ def validate_operator_placement(
             if has_number_after:
                 return "Plus sign cannot be placed in front of a number"
     
-    # NOTE: Minus sign can be placed in front of numbers 1-16, 20, or formed numbers
+    # NOTE: Minus sign can be placed in front of numbers 1-16, 20, or formed numbers (for negative)
+    # NOTE: Minus can also be used as subtraction operator (after a number, before 0-20 or valid numbers)
     if tile == '-':
-        # Check if there's a number after it (right or down)
-        if not _has_valid_number_after(board, row, col, chars):
-            return "Minus sign must be followed by a valid number (1-16, 20, or formed number)"
+        # Check if this is making a negative number (at start or after operator)
+        if _is_making_negative_number(board, row, col):
+            # For negative numbers, must be followed by valid number (1-16, 20, or formed, but NOT 0, 17, 18, 19)
+            if not _has_valid_number_after(board, row, col, chars):
+                return "Minus sign must be followed by a valid number (1-16, 20, or formed number) to make negative"
+        # If it's subtraction (after a number), it's fine - can subtract from 0-20
+        # No additional validation needed for subtraction
     
     return None
 
@@ -734,6 +826,30 @@ def _is_at_start_of_expression(board: List[List[str]], row: int, col: int) -> bo
     if row > 0 and board[row-1][col] != ' ':
         return False
     return True
+
+
+def _is_making_negative_number(board: List[List[str]], row: int, col: int) -> bool:
+    """Check if minus sign is making a negative number (at start or after operator)"""
+    # Check if there's nothing before it (start of expression)
+    if _is_at_start_of_expression(board, row, col):
+        return True
+    
+    # Check if there's an operator before it (after operator = making negative)
+    # Check left
+    if col > 0:
+        left = board[row][col-1]
+        if left != ' ':
+            if left in ['+', '-', '×', '÷', '='] or (is_blank_tile(left) and get_blank_value(left) in ['+', '-', '×', '÷', '=']):
+                return True
+    # Check up
+    if row > 0:
+        up = board[row-1][col]
+        if up != ' ':
+            if up in ['+', '-', '×', '÷', '='] or (is_blank_tile(up) and get_blank_value(up) in ['+', '-', '×', '÷', '=']):
+                return True
+    
+    # If there's a number before it, it's subtraction, not negative
+    return False
 
 
 def _has_number_before(board: List[List[str]], row: int, col: int) -> bool:
@@ -754,27 +870,39 @@ def _has_number_before(board: List[List[str]], row: int, col: int) -> bool:
 
 
 def _has_valid_number_after(board: List[List[str]], row: int, col: int, chars: Dict) -> bool:
-    """Check if there's a valid number after minus sign"""
+    """Check if there's a valid number after minus sign (for making negative numbers)"""
     # Check right
     if col < 14:
         right = board[row][col+1]
         if right != ' ':
+            # Cannot make 0 negative
+            if right == '0' or (is_blank_tile(right) and get_blank_value(right) == '0'):
+                return False
             if is_number_tile(right):
-                # Check if it's a valid number (1-16, 20, or part of formed number)
+                # Check if it's a valid number (1-16, 20, or part of formed number, but NOT 17, 18, 19)
                 return _is_valid_negative_number(board, row, col+1, True, chars)
             elif is_blank_tile(right):
                 val = get_blank_value(right)
                 if val in NUMBER_TILES:
+                    # Cannot make 0 negative
+                    if val == '0':
+                        return False
                     return _is_valid_negative_number(board, row, col+1, True, chars)
     # Check down
     if row < 14:
         down = board[row+1][col]
         if down != ' ':
+            # Cannot make 0 negative
+            if down == '0' or (is_blank_tile(down) and get_blank_value(down) == '0'):
+                return False
             if is_number_tile(down):
                 return _is_valid_negative_number(board, row+1, col, False, chars)
             elif is_blank_tile(down):
                 val = get_blank_value(down)
                 if val in NUMBER_TILES:
+                    # Cannot make 0 negative
+                    if val == '0':
+                        return False
                     return _is_valid_negative_number(board, row+1, col, False, chars)
     return False
 

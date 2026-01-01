@@ -301,15 +301,28 @@ class AMathGame:
         
         # Validate the play (use original board for validation, not the modified one)
         if new_tiles:
-            is_valid, error_message = validate_play(
-                original_board, new_tiles, self.turn, self.chars, is_horizontal
+            is_valid, error_message, parsed_equations = validate_play(
+                original_board, new_tiles, self.turn, self.chars, is_horizontal, debug=True
             )
             if not is_valid:
                 # Invalid play - restore board and return False
                 print(f"Invalid play: {error_message}")
+                # Display parsed equations for debugging
+                if parsed_equations:
+                    print("\nParsed equations:")
+                    for direction, sequence in parsed_equations:
+                        tiles_str = ' '.join([tile for _, _, tile in sequence])
+                        print(f"  {direction}: {tiles_str}")
                 self.board = original_board
                 self.turn = original_turn
                 return False
+            else:
+                # Display parsed equations for debugging (even on success)
+                if parsed_equations:
+                    print("\nParsed equations:")
+                    for direction, sequence in parsed_equations:
+                        tiles_str = ' '.join([tile for _, _, tile in sequence])
+                        print(f"  {direction}: {tiles_str}")
         
         # Success - advance turn and save state
         self.turn += 1
