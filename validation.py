@@ -160,11 +160,19 @@ def validate_play(
                     # If it has 2+ tiles, validate it
                     if len(sequence) >= 2:
                         if debug:
-                            parsed_equations.append(("perpendicular-horizontal", sequence))
+                            # Resolve compound tiles and blank tiles for display using the temp_board
+                            resolved_sequence = _resolve_sequence_for_display(sequence, temp_board)
+                            parsed_equations.append(("perpendicular-horizontal", resolved_sequence))
                         has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
                         if has_equals:
                             # It's an equation - must be valid
-                            is_valid, error = validate_equation(sequence, chars)
+                            if debug:
+                                is_valid, error, resolved_seq = validate_equation(sequence, chars, return_resolved=True)
+                                if resolved_seq:
+                                    # Update parsed equation with resolved sequence
+                                    parsed_equations[-1] = ("perpendicular-horizontal", resolved_seq)
+                            else:
+                                is_valid, error = validate_equation(sequence, chars, return_resolved=False)
                             if not is_valid:
                                 return False, f"Invalid perpendicular horizontal equation at row {r+1}: {error}", parsed_equations if debug else None
                         else:
@@ -175,10 +183,18 @@ def validate_play(
                 # This is a horizontal sequence in a horizontal play - validate it
                 has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
                 if debug:
-                    parsed_equations.append(("horizontal", sequence))
+                    # Resolve compound tiles and blank tiles for display using the temp_board
+                    resolved_sequence = _resolve_sequence_for_display(sequence, temp_board)
+                    parsed_equations.append(("horizontal", resolved_sequence))
                 if has_equals:
                     # It's an equation - must be valid (already checked len >= 2)
-                    is_valid, error = validate_equation(sequence, chars)
+                    if debug:
+                        is_valid, error, resolved_seq = validate_equation(sequence, chars, return_resolved=True)
+                        if resolved_seq:
+                            # Update parsed equation with resolved sequence
+                            parsed_equations[-1] = ("horizontal", resolved_seq)
+                    else:
+                        is_valid, error = validate_equation(sequence, chars, return_resolved=False)
                     if not is_valid:
                         return False, f"Invalid horizontal equation at row {r+1}: {error}", parsed_equations if debug else None
                     has_valid_equation = True
@@ -230,11 +246,19 @@ def validate_play(
                     # If it has 2+ tiles, validate it
                     if len(sequence) >= 2:
                         if debug:
-                            parsed_equations.append(("perpendicular-vertical", sequence))
+                            # Resolve compound tiles and blank tiles for display using the temp_board
+                            resolved_sequence = _resolve_sequence_for_display(sequence, temp_board)
+                            parsed_equations.append(("perpendicular-vertical", resolved_sequence))
                         has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
                         if has_equals:
                             # It's an equation - must be valid
-                            is_valid, error = validate_equation(sequence, chars)
+                            if debug:
+                                is_valid, error, resolved_seq = validate_equation(sequence, chars, return_resolved=True)
+                                if resolved_seq:
+                                    # Update parsed equation with resolved sequence
+                                    parsed_equations[-1] = ("perpendicular-vertical", resolved_seq)
+                            else:
+                                is_valid, error = validate_equation(sequence, chars, return_resolved=False)
                             if not is_valid:
                                 return False, f"Invalid perpendicular vertical equation at column {chr(ord('A')+c)}: {error}", parsed_equations if debug else None
                         else:
@@ -245,10 +269,18 @@ def validate_play(
                 # This is a vertical sequence in a vertical play - validate it
                 has_equals = any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in sequence)
                 if debug:
-                    parsed_equations.append(("vertical", sequence))
+                    # Resolve compound tiles and blank tiles for display using the temp_board
+                    resolved_sequence = _resolve_sequence_for_display(sequence, temp_board)
+                    parsed_equations.append(("vertical", resolved_sequence))
                 if has_equals:
                     # It's an equation - must be valid (already checked len >= 2)
-                    is_valid, error = validate_equation(sequence, chars)
+                    if debug:
+                        is_valid, error, resolved_seq = validate_equation(sequence, chars, return_resolved=True)
+                        if resolved_seq:
+                            # Update parsed equation with resolved sequence
+                            parsed_equations[-1] = ("vertical", resolved_seq)
+                    else:
+                        is_valid, error = validate_equation(sequence, chars, return_resolved=False)
                     if not is_valid:
                         return False, f"Invalid vertical equation at column {chr(ord('A')+c)}: {error}", parsed_equations if debug else None
                     has_valid_equation = True
@@ -264,10 +296,42 @@ def validate_play(
         return False, f"First play must form a valid equation with an equals sign. Single tiles or sequences without equals signs are not allowed."
     
     # NOTE: Validate that multi-digit number tiles (10-20) are not adjacent to other number tiles
+    # Check both: new multi-digit tiles adjacent to number tiles, and new number tiles adjacent to multi-digit tiles
     for r, c, tile in new_tiles:
+        # Check if the new tile is a multi-digit tile adjacent to number tiles
         error = validate_multi_digit_adjacency(temp_board, r, c, tile, chars)
         if error:
             return False, error, parsed_equations if debug else None
+        
+        # Check if the new tile is a number tile adjacent to existing multi-digit tiles
+        if is_number_tile(tile) or is_blank_tile(tile):
+            # Get the actual value if it's a blank
+            if is_blank_tile(tile):
+                tile_value = get_blank_value(tile)
+                if tile_value not in NUMBER_TILES:
+                    continue  # Not a number blank, skip
+            else:
+                tile_value = tile
+            
+            # Only check if this is a single-digit number tile (not multi-digit)
+            if tile_value in NUMBER_TILES and len(tile_value) == 1:
+                # Check all 4 adjacent positions for existing multi-digit tiles
+                neighbors = [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
+                for nr, nc in neighbors:
+                    if 0 <= nr < 15 and 0 <= nc < 15:
+                        neighbor = temp_board[nr][nc]
+                        if neighbor != ' ':
+                            # Check if neighbor is a multi-digit tile (10-20)
+                            if is_blank_tile(neighbor):
+                                neighbor_value = get_blank_value(neighbor)
+                                if neighbor_value not in NUMBER_TILES:
+                                    continue
+                            else:
+                                neighbor_value = neighbor
+                            
+                            # Check if neighbor is a multi-digit number tile (10-20)
+                            if neighbor_value in NUMBER_TILES and len(neighbor_value) > 1:
+                                return False, f"Number tile '{tile_value}' cannot be placed adjacent to multi-digit number tile '{neighbor_value}'. Use single digits separated by commas (e.g., '1,7,2' instead of '2,17' or '17,2')", parsed_equations if debug else None
     
     # NOTE: Validate number formation rules
     for r, c, tile in new_tiles:
@@ -278,8 +342,84 @@ def validate_play(
                 return False, error, parsed_equations if debug else None
     
     # NOTE: Validate operator placement rules
+    # NOTE: For compound tiles (+/-, ×/÷), we need to check all combinations together
+    # Extract all affected positions with operators or compound tiles
+    operator_positions = []
+    compound_positions = []
+    new_tile_positions = {(r, c) for r, c, _ in new_tiles}
+    
     for r, c, tile in new_tiles:
-        if is_operator_tile(tile) or is_blank_tile(tile):
+        if is_operator_tile(tile) or is_blank_tile(tile) or tile in ['×/÷', '+/-']:
+            operator_positions.append((r, c, tile))
+            if tile in ['×/÷', '+/-']:
+                compound_positions.append((r, c, tile))
+    
+    # If there are compound tiles, we need to check all combinations together
+    if compound_positions:
+        # Generate all combinations for all compound tiles
+        all_compound_combos = []
+        for r, c, tile in compound_positions:
+            if tile == '+/-':
+                all_compound_combos.append(['+', '-'])
+            else:  # ×/÷
+                all_compound_combos.append(['×', '÷'])
+        
+        # Try all combinations using itertools.product
+        from itertools import product
+        all_combos = list(product(*all_compound_combos))
+        
+        # Check if ANY combination is valid
+        has_valid_combination = False
+        first_error = None
+        
+        for combo in all_combos:
+            # Create a test board with this combination
+            test_board = [row[:] for row in temp_board]
+            combo_idx = 0
+            for r, c, tile in compound_positions:
+                test_board[r][c] = combo[combo_idx]
+                combo_idx += 1
+            
+            # Validate all operator positions with this combination
+            # Need to check neighbors that are also new tiles
+            combo_valid = True
+            for r, c, tile in operator_positions:
+                # Resolve the tile value
+                if (r, c, tile) in compound_positions:
+                    # This is a compound tile - use the resolved value from combo
+                    combo_idx = compound_positions.index((r, c, tile))
+                    resolved_tile = combo[combo_idx]
+                elif is_blank_tile(tile):
+                    resolved_tile = get_blank_value(tile)
+                    if resolved_tile not in ['+', '-', '×', '÷', '=']:
+                        continue  # Not an operator blank
+                else:
+                    resolved_tile = tile
+                
+                if resolved_tile not in ['+', '-', '×', '÷', '=']:
+                    continue
+                
+                # Validate this operator, checking neighbors (including new tiles)
+                # Create a set of new tile positions for this validation
+                error = validate_operator_placement_single_with_new_tiles(
+                    test_board, r, c, resolved_tile, new_tile_positions, chars
+                )
+                
+                if error:
+                    combo_valid = False
+                    if first_error is None:
+                        first_error = error
+                    break
+            
+            if combo_valid:
+                has_valid_combination = True
+                break
+        
+        if not has_valid_combination:
+            return False, first_error or "Invalid operator placement with compound tiles", parsed_equations if debug else None
+    else:
+        # No compound tiles, just check each operator normally
+        for r, c, tile in operator_positions:
             error = validate_operator_placement(temp_board, r, c, chars)
             if error:
                 return False, error, parsed_equations if debug else None
@@ -351,13 +491,15 @@ def extract_equation(
 
 def validate_equation(
     equation: List[Tuple[int, int, str]],
-    chars: Dict
-) -> Tuple[bool, Optional[str]]:
+    chars: Dict,
+    return_resolved: bool = False
+) -> Tuple[bool, Optional[str], Optional[List[Tuple[int, int, str]]]]:
     """
     Validate that an equation is mathematically correct.
     Handles blank tiles and compound tiles (×/÷, +/-).
     
-    Returns (is_valid, error_message)
+    Returns (is_valid, error_message, resolved_sequence)
+    If return_resolved is True, returns the resolved sequence that was checked.
     """
     # Extract tile sequence
     tiles = [tile for _, _, tile in equation]
@@ -375,6 +517,8 @@ def validate_equation(
             blank_combinations.append([blank_value])
         else:
             # Invalid blank value
+            if return_resolved:
+                return False, f"Blank tile has invalid value: {blank_value}", None
             return False, f"Blank tile has invalid value: {blank_value}"
     
     compound_combinations = []
@@ -389,29 +533,43 @@ def validate_equation(
     all_compound_combos = list(product(*compound_combinations)) if compound_combinations else [()]
     
     first_error = None
+    first_resolved_sequence = None
     for blank_combo in all_blank_combos:
         for compound_combo in all_compound_combos:
             # Create a test sequence with resolved tiles
             test_tiles = tiles[:]
+            resolved_sequence = []
             blank_idx = 0
             compound_idx = 0
-            for i, tile in enumerate(tiles):
+            for i, (r, c, tile) in enumerate(equation):
                 if is_blank_tile(tile):
-                    test_tiles[i] = blank_combo[blank_idx]
+                    resolved_value = blank_combo[blank_idx]
+                    test_tiles[i] = resolved_value
+                    resolved_sequence.append((r, c, resolved_value))
                     blank_idx += 1
                 elif tile in ['×/÷', '+/-']:
-                    test_tiles[i] = compound_combo[compound_idx]
+                    resolved_value = compound_combo[compound_idx]
+                    test_tiles[i] = resolved_value
+                    resolved_sequence.append((r, c, resolved_value))
                     compound_idx += 1
+                else:
+                    resolved_sequence.append((r, c, tile))
             
             # Validate this combination
             is_valid, error = validate_equation_sequence(test_tiles)
             if is_valid:
+                if return_resolved:
+                    return True, None, resolved_sequence
                 return True, None
             # Keep track of the first specific error encountered (for better error messages)
             if error and first_error is None:
                 first_error = error
+                if return_resolved:
+                    first_resolved_sequence = resolved_sequence
     
     # Return a more specific error if we found one, otherwise generic message
+    if return_resolved:
+        return False, first_error or "No valid combination of blank tiles and compound tiles produces a valid equation", first_resolved_sequence
     if first_error:
         return False, first_error
     return False, "No valid combination of blank tiles and compound tiles produces a valid equation"
@@ -772,28 +930,146 @@ def validate_number_formation(
     return None
 
 
-def validate_operator_placement(
+def validate_operator_placement_single_with_new_tiles(
     board: List[List[str]],
     row: int,
     col: int,
+    tile: str,
+    new_tile_positions: Set[Tuple[int, int]],
     chars: Dict
 ) -> Optional[str]:
     """
-    Validate operator placement rules.
+    Validate operator placement for a single resolved tile, considering new tiles.
+    This version checks neighbors that might also be new tiles.
+    """
+    if tile not in ['+', '-', '×', '÷', '=']:
+        return None  # Not an operator
+    
+    # NOTE: Check for adjacent operators
+    # NOTE: Minus can be adjacent to = or other operators if it's making a negative number
+    neighbors = [(row-1, col), (row+1, col), (row, col-1), (row, col+1)]
+    for nr, nc in neighbors:
+        if 0 <= nr < 15 and 0 <= nc < 15:
+            neighbor = board[nr][nc]
+            if neighbor != ' ':
+                # Check if neighbor is an operator
+                # Handle compound tiles in neighbors - need to check all combinations
+                neighbor_value = None
+                if is_blank_tile(neighbor):
+                    neighbor_value = get_blank_value(neighbor)
+                elif neighbor in ['+', '-', '×', '÷', '=']:
+                    neighbor_value = neighbor
+                elif neighbor in ['×/÷', '+/-']:
+                    # Compound tile neighbor - if it's a new tile, we need to check all combinations
+                    # But for now, just check if ANY combination would be invalid
+                    if (nr, nc) in new_tile_positions:
+                        # This is a new compound tile - both combinations must be checked
+                        # For now, reject if either combination creates adjacent operators
+                        if neighbor == '+/-':
+                            neighbor_options = ['+', '-']
+                        else:  # ×/÷
+                            neighbor_options = ['×', '÷']
+                        
+                        # Check if ANY combination creates adjacent operators
+                        all_invalid = True
+                        for neighbor_opt in neighbor_options:
+                            if neighbor_opt == '=' or neighbor_opt in ['+', '-', '×', '÷']:
+                                # If this is a minus making a negative number, it's OK
+                                if tile == '-' and _is_making_negative_number(board, row, col):
+                                    all_invalid = False
+                                    break
+                                # If neighbor is minus making a negative number, it's OK
+                                if neighbor_opt == '-' and _is_making_negative_number(board, nr, nc):
+                                    all_invalid = False
+                                    break
+                        
+                        if all_invalid:
+                            return "Operators cannot be placed directly next to each other"
+                        continue
+                    else:
+                        # Existing compound tile - skip for now (handled elsewhere)
+                        continue
+                
+                if neighbor_value and neighbor_value in ['+', '-', '×', '÷', '=']:
+                    # NOTE: Operators cannot be adjacent EXCEPT:
+                    # - Minus can be after = or other operators if making a negative number
+                    # - Minus can be at start of expression for negative numbers
+                    if neighbor_value == '=' or neighbor_value in ['+', '-', '×', '÷']:
+                        # If this is a minus making a negative number, it's OK
+                        if tile == '-' and _is_making_negative_number(board, row, col):
+                            continue
+                        # If neighbor is minus making a negative number, it's OK
+                        if neighbor_value == '-' and _is_making_negative_number(board, nr, nc):
+                            continue
+                        # Otherwise, operators are adjacent and invalid
+                        return "Operators cannot be placed directly next to each other"
+    
+    # NOTE: Plus sign cannot be placed in front of a number (at start of expression)
+    if tile == '+':
+        # Check if plus is at the start of an expression (nothing before it)
+        # and there's a number after it
+        is_at_start = _is_at_start_of_expression(board, row, col)
+        if is_at_start:
+            # Check if there's a number after the plus sign
+            has_number_after = False
+            # Check right
+            if col < 14:
+                right = board[row][col+1]
+                if right != ' ':
+                    if is_number_tile(right) or (is_blank_tile(right) and get_blank_value(right) in NUMBER_TILES):
+                        has_number_after = True
+            # Check down
+            if not has_number_after and row < 14:
+                down = board[row+1][col]
+                if down != ' ':
+                    if is_number_tile(down) or (is_blank_tile(down) and get_blank_value(down) in NUMBER_TILES):
+                        has_number_after = True
+            if has_number_after:
+                return "Plus sign cannot be placed in front of a number"
+    
+    # NOTE: Minus sign cannot be placed in front of 0
+    # NOTE: This applies both at the start of an expression AND when making a negative number
+    if tile == '-':
+        # Check if minus is making a negative number (at start or after operator)
+        is_making_negative = _is_making_negative_number(board, row, col)
+        if is_making_negative:
+            # Check if there's a 0 after the minus sign
+            has_zero_after = False
+            # Check right
+            if col < 14:
+                right = board[row][col+1]
+                if right != ' ':
+                    if right == '0' or (is_blank_tile(right) and get_blank_value(right) == '0'):
+                        has_zero_after = True
+            # Check down
+            if not has_zero_after and row < 14:
+                down = board[row+1][col]
+                if down != ' ':
+                    if down == '0' or (is_blank_tile(down) and get_blank_value(down) == '0'):
+                        has_zero_after = True
+            if has_zero_after:
+                return "Minus sign cannot be placed in front of 0"
+    
+    return None
+
+
+def validate_operator_placement_single(
+    board: List[List[str]],
+    row: int,
+    col: int,
+    tile: str,
+    chars: Dict
+) -> Optional[str]:
+    """
+    Validate operator placement for a single resolved tile (not compound).
+    This is the core validation logic.
     
     NOTE: Operators cannot be placed directly next to each other.
     NOTE: Plus sign cannot be placed in front of a number.
+    NOTE: Minus sign cannot be placed in front of 0.
     NOTE: Minus sign can be placed in front of numbers 1-16, 20, or formed numbers.
     """
-    tile = board[row][col]
-    
-    # Get the actual value if it's a blank
-    if is_blank_tile(tile):
-        value = get_blank_value(tile)
-        if value not in ['+', '-', '×', '÷', '=']:
-            return None  # Not an operator blank
-        tile = value
-    
+    # tile is already resolved (not a compound tile, not a blank)
     if tile not in ['+', '-', '×', '÷', '=']:
         return None  # Not an operator
     
@@ -832,12 +1108,28 @@ def validate_operator_placement(
                         # Otherwise, operators are adjacent and invalid
                         return "Operators cannot be placed directly next to each other"
     
-    # NOTE: Plus sign cannot be placed in front of a number (at start of expression)
+    # NOTE: Plus sign cannot be placed in front of a number
+    # NOTE: This applies both at the start of an expression AND when after an operator (making a positive number)
     if tile == '+':
-        # Check if plus is at the start of an expression (nothing before it)
-        # and there's a number after it
+        # Check if plus is at the start of an expression OR after an operator (making a positive number)
         is_at_start = _is_at_start_of_expression(board, row, col)
-        if is_at_start:
+        is_after_operator = False
+        if not is_at_start:
+            # Check if there's an operator before it
+            # Check left
+            if col > 0:
+                left = board[row][col-1]
+                if left != ' ':
+                    if left in ['+', '-', '×', '÷', '='] or (is_blank_tile(left) and get_blank_value(left) in ['+', '-', '×', '÷', '=']):
+                        is_after_operator = True
+            # Check up
+            if not is_after_operator and row > 0:
+                up = board[row-1][col]
+                if up != ' ':
+                    if up in ['+', '-', '×', '÷', '='] or (is_blank_tile(up) and get_blank_value(up) in ['+', '-', '×', '÷', '=']):
+                        is_after_operator = True
+        
+        if is_at_start or is_after_operator:
             # Check if there's a number after the plus sign
             has_number_after = False
             # Check right
@@ -855,18 +1147,87 @@ def validate_operator_placement(
             if has_number_after:
                 return "Plus sign cannot be placed in front of a number"
     
-    # NOTE: Minus sign can be placed in front of numbers 1-16, 20, or formed numbers (for negative)
-    # NOTE: Minus can also be used as subtraction operator (after a number, before 0-20 or valid numbers)
+    # NOTE: Minus sign cannot be placed in front of 0
+    # NOTE: This applies both at the start of an expression AND when making a negative number
     if tile == '-':
-        # Check if this is making a negative number (at start or after operator)
-        if _is_making_negative_number(board, row, col):
-            # For negative numbers, must be followed by valid number (1-16, 20, or formed, but NOT 0, 17, 18, 19)
-            if not _has_valid_number_after(board, row, col, chars):
-                return "Minus sign must be followed by a valid number (1-16, 20, or formed number) to make negative"
-        # If it's subtraction (after a number), it's fine - can subtract from 0-20
-        # No additional validation needed for subtraction
+        # Check if minus is making a negative number (at start or after operator)
+        is_making_negative = _is_making_negative_number(board, row, col)
+        if is_making_negative:
+            # Check if there's a 0 after the minus sign
+            has_zero_after = False
+            # Check right
+            if col < 14:
+                right = board[row][col+1]
+                if right != ' ':
+                    if right == '0' or (is_blank_tile(right) and get_blank_value(right) == '0'):
+                        has_zero_after = True
+            # Check down
+            if not has_zero_after and row < 14:
+                down = board[row+1][col]
+                if down != ' ':
+                    if down == '0' or (is_blank_tile(down) and get_blank_value(down) == '0'):
+                        has_zero_after = True
+            if has_zero_after:
+                return "Minus sign cannot be placed in front of 0"
     
     return None
+
+
+def _resolve_sequence_for_display(sequence: List[Tuple[int, int, str]], board: List[List[str]]) -> List[Tuple[int, int, str]]:
+    """
+    Resolve compound tiles and blank tiles in a sequence for display.
+    For compound tiles, shows the resolved value from the board (if already resolved),
+    otherwise shows the first possible value.
+    For blank tiles, shows the resolved value.
+    """
+    resolved = []
+    for r, c, tile in sequence:
+        if tile in ['×/÷', '+/-']:
+            # Check if the board has a resolved value for this compound tile
+            board_tile = board[r][c]
+            if board_tile in ['+', '-', '×', '÷']:
+                # Board has a resolved value (from validation), use it
+                resolved.append((r, c, board_tile))
+            else:
+                # Still a compound tile, show the first option
+                if tile == '+/-':
+                    resolved.append((r, c, '+'))  # Show first option
+                else:  # ×/÷
+                    resolved.append((r, c, '×'))  # Show first option
+        elif is_blank_tile(tile):
+            # Show blank tile value
+            blank_value = get_blank_value(tile)
+            resolved.append((r, c, blank_value))
+        else:
+            resolved.append((r, c, tile))
+    return resolved
+
+
+def validate_operator_placement(
+    board: List[List[str]],
+    row: int,
+    col: int,
+    chars: Dict
+) -> Optional[str]:
+    """
+    Validate operator placement rules.
+    Handles blank tiles by resolving them first.
+    """
+    tile = board[row][col]
+    
+    # Get the actual value if it's a blank
+    if is_blank_tile(tile):
+        value = get_blank_value(tile)
+        if value not in ['+', '-', '×', '÷', '=']:
+            return None  # Not an operator blank
+        tile = value
+    
+    # If it's a compound tile, it should have been handled by the caller
+    if tile in ['×/÷', '+/-']:
+        return None  # Should be handled separately
+    
+    # Use the single-tile validation
+    return validate_operator_placement_single(board, row, col, tile, chars)
 
 
 def _is_at_start_of_expression(board: List[List[str]], row: int, col: int) -> bool:

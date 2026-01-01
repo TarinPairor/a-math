@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional
 from copy import deepcopy
 from tiles import resolve_tile, get_tile_by_index, get_tile_display
 from ui import display_board, display_info, show_state as ui_show_state
-from validation import validate_play, BLANK_VALUES, NUMBER_TILES
+from validation import validate_play, BLANK_VALUES, NUMBER_TILES, is_blank_tile, get_blank_value
 
 
 class AMathGame:
@@ -311,7 +311,22 @@ class AMathGame:
                 if parsed_equations:
                     print("\nParsed equations:")
                     for direction, sequence in parsed_equations:
-                        tiles_str = ' '.join([tile for _, _, tile in sequence])
+                        # Resolve compound tiles and blank tiles for display
+                        resolved_tiles = []
+                        for _, _, tile in sequence:
+                            if tile in ['×/÷', '+/-']:
+                                # Show both possibilities for compound tiles
+                                if tile == '+/-':
+                                    resolved_tiles.append('+/-')
+                                else:
+                                    resolved_tiles.append('×/÷')
+                            elif is_blank_tile(tile):
+                                # Show blank tile value
+                                blank_value = get_blank_value(tile)
+                                resolved_tiles.append(blank_value)
+                            else:
+                                resolved_tiles.append(tile)
+                        tiles_str = ' '.join(resolved_tiles)
                         print(f"  {direction}: {tiles_str}")
                 self.board = original_board
                 self.turn = original_turn
@@ -321,7 +336,22 @@ class AMathGame:
                 if parsed_equations:
                     print("\nParsed equations:")
                     for direction, sequence in parsed_equations:
-                        tiles_str = ' '.join([tile for _, _, tile in sequence])
+                        # Resolve compound tiles and blank tiles for display
+                        resolved_tiles = []
+                        for _, _, tile in sequence:
+                            if tile in ['×/÷', '+/-']:
+                                # Show both possibilities for compound tiles
+                                if tile == '+/-':
+                                    resolved_tiles.append('+/-')
+                                else:
+                                    resolved_tiles.append('×/÷')
+                            elif is_blank_tile(tile):
+                                # Show blank tile value
+                                blank_value = get_blank_value(tile)
+                                resolved_tiles.append(blank_value)
+                            else:
+                                resolved_tiles.append(tile)
+                        tiles_str = ' '.join(resolved_tiles)
                         print(f"  {direction}: {tiles_str}")
         
         # Success - advance turn and save state
