@@ -27,12 +27,23 @@ def display_board(chars: dict, board: list):
                 row_display.append("·".center(3))
             else:
                 # Show tile key directly (e.g., "12", "×/÷", "+/-")
-                if tile in chars:
+                # Handle blank tiles: stored as "?value" format
+                if tile.startswith('?'):
+                    # Blank tile - show the value it represents with a visual marker
+                    # Use combining low line (U+0332) to underline without taking space
+                    blank_value = tile[1:]  # Get value after "?"
+                    # Center the base value first (this gives us the correct spacing)
+                    centered_base = blank_value.center(3)
+                    # Now add combining underline only to non-space characters
+                    # This preserves the centering while adding the visual marker
+                    marked_value = ''.join(
+                        char + '\u0332' if char != ' ' else ' '
+                        for char in centered_base
+                    )
+                    row_display.append(marked_value)
+                elif tile in chars:
                     # Display the actual tile key, not the UI
                     display_key = tile
-                    # Handle blank tile specially
-                    if tile == '?':
-                        display_key = '?'
                     row_display.append(display_key.center(3))
                 else:
                     row_display.append(tile.center(3))
@@ -49,9 +60,11 @@ def display_info(chars: dict, bag: list, rack: list, turn: int):
     
     print(f"Bag + unseen: ({unseen_total})")
     
-    # Show bag contents (all tiles, formatted)
+    # Show bag contents (all tiles, formatted and sorted)
+    # Sort by tile key for consistent display
+    sorted_bag = sorted(bag, key=lambda t: (chars.get(t, {}).get('index', 999), t))
     bag_display = []
-    for tile in bag:
+    for tile in sorted_bag:
         display = get_tile_display(chars, tile)
         bag_display.append(display)
     

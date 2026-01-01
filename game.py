@@ -172,6 +172,11 @@ class AMathGame:
                 if identifier == '.':
                     # Skip existing tile, just move position
                     pass
+                elif identifier.startswith('(') and identifier.endswith(')'):
+                    # Blank tile with value: (value) format
+                    blank_value = identifier[1:-1]  # Remove parentheses
+                    # Store blank tile as "?value" to track what it represents
+                    self.board[current_row][current_col] = f"?{blank_value}"
                 else:
                     # Resolve tile identifier to tile key
                     tile_key = self._resolve_tile(identifier)
