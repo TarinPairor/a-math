@@ -1,0 +1,41 @@
+{
+    "0": { "value": 1, "count": 5, "ui": "0₁", "index": 0 },
+    "1": { "value": 1, "count": 6, "ui": "1₁", "index": 1 },
+    "2": { "value": 1, "count": 6, "ui": "2₁", "index": 2 },
+    "3": { "value": 1, "count": 5, "ui": "3₁", "index": 3 },
+  
+    "4": { "value": 2, "count": 5, "ui": "4₂", "index": 4 },
+    "5": { "value": 2, "count": 4, "ui": "5₂", "index": 5 },
+    "6": { "value": 2, "count": 4, "ui": "6₂", "index": 6 },
+    "7": { "value": 2, "count": 4, "ui": "7₂", "index": 7 },
+  
+    "8": { "value": 2, "count": 4, "ui": "8₂", "index": 8 },
+    "9": { "value": 2, "count": 4, "ui": "9₂", "index": 9 },
+    "10": { "value": 3, "count": 2, "ui": "10₃", "index": 10 },
+    "11": { "value": 4, "count": 1, "ui": "11₄", "index": 11 },
+  
+    "12": { "value": 3, "count": 2, "ui": "12₃", "index": 12 },
+    "13": { "value": 6, "count": 1, "ui": "13₆", "index": 13 },
+    "14": { "value": 4, "count": 1, "ui": "14₄", "index": 14 },
+    "15": { "value": 4, "count": 1, "ui": "15₄", "index": 15 },
+  
+    "16": { "value": 4, "count": 1, "ui": "16₄", "index": 16 },
+    "17": { "value": 6, "count": 1, "ui": "17₆", "index": 17 },
+    "18": { "value": 4, "count": 1, "ui": "18₄", "index": 18 },
+    "19": { "value": 7, "count": 1, "ui": "19₇", "index": 19 },
+  
+    "20": { "value": 5, "count": 1, "ui": "20₅", "index": 20 },
+  
+    "+": { "value": 2, "count": 4, "ui": "+₂", "index": 21 },
+    "-": { "value": 2, "count": 4, "ui": "-₂", "index": 22 },
+    "+/-": { "value": 1, "count": 5, "ui": "+/-₁", "index": 23, "alias": "+/" },
+  
+    "×": { "value": 2, "count": 4, "ui": "×₂", "index": 24, "alias": "*" },
+    "÷": { "value": 2, "count": 4, "ui": "÷₂", "index": 25, "alias": "/" },
+    "×/÷": { "value": 1, "count": 4, "ui": "×/÷₁", "index": 26, "alias": "*/" },
+  
+    "=": { "value": 1, "count": 11, "ui": "=₁", "index": 27 },
+  
+    "?": { "value": 0, "count": 4, "ui": "\u0000₀", "index": 28, "alias": "?" }
+  }
+  
