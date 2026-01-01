@@ -302,7 +302,7 @@ class AMathGame:
         # Validate the play (use original board for validation, not the modified one)
         if new_tiles:
             is_valid, error_message = validate_play(
-                original_board, new_tiles, self.turn, self.chars
+                original_board, new_tiles, self.turn, self.chars, is_horizontal
             )
             if not is_valid:
                 # Invalid play - restore board and return False
