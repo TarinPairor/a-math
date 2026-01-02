@@ -5,8 +5,8 @@ Generates all valid moves from the current rack.
 
 from typing import List, Tuple, Optional
 from itertools import combinations, permutations, product
-from validation import validate_play, BLANK_VALUES, NUMBER_TILES
-from tqdm import tqdm
+from validation import validate_play, BLANK_VALUES, NUMBER_TILES, _get_compound_resolved_value
+
 
 # Tile type constants
 SINGLE_DIGITS = {str(i) for i in range(10)}  # 0-9
@@ -30,12 +30,18 @@ def tile_to_identifier(tile: str) -> str:
     """
     Convert a tile key to an identifier string for commit command.
     - Blank tiles (stored as "?value") should use "(value)" format
+    - Locked compound tiles (stored as "symbol:resolved") should use the compound symbol
     - Regular tiles use their key directly
     """
     if tile.startswith('?'):
         # Blank tile - use (value) format
         value = tile[1:]
         return f"({value})"
+    elif ':' in tile:
+        # Locked compound tile - return the compound symbol (before :)
+        parts = tile.split(':', 1)
+        if len(parts) == 2 and parts[0] in ['×/÷', '+/-']:
+            return parts[0]  # Return the compound symbol
     return tile
 
 
@@ -430,18 +436,18 @@ def generate_moves(
     # For turn 0, must cover center square (7, 7)
     if turn == 0:
         # Start with longest moves first (8 tiles down to 3, minimum for equation: num=num)
-        for num_tiles in tqdm(range(min(len(rack), 8), 2, -1), desc="Tile count", leave=False):
+        for num_tiles in range(min(len(rack), 8), 2, -1):
             if len(unique_move_keys) >= max_moves:
                 break
             
             # Generate equation patterns for this length
             patterns = generate_equation_patterns(num_tiles)
             
-            for expanded_rack in tqdm(expanded_racks, desc=f"Blank combos ({num_tiles} tiles)", leave=False, disable=len(expanded_racks) <= 1):
+            for expanded_rack in expanded_racks:
                 if len(unique_move_keys) >= max_moves:
                     break
                 
-                for pattern in tqdm(patterns, desc="Patterns", leave=False, disable=len(patterns) < 5):
+                for pattern in patterns:
                     if len(unique_move_keys) >= max_moves:
                         break
                     
@@ -532,7 +538,7 @@ def generate_moves(
         # For turn > 0, we can also extend existing sequences, not just create new equations
         # Try pattern-based first (for full equations), then fallback to simpler approach
         # Start with longest moves first (8 tiles down to 1)
-        for num_tiles in tqdm(range(min(len(rack), 8), 0, -1), desc="Tile count", leave=False):
+        for num_tiles in range(min(len(rack), 8), 0, -1):
             if len(unique_move_keys) >= max_moves:
                 break
             
@@ -541,11 +547,11 @@ def generate_moves(
                 # Generate equation patterns for this length
                 patterns = generate_equation_patterns(num_tiles)
                 
-                for expanded_rack in tqdm(expanded_racks, desc=f"Blank combos ({num_tiles} tiles)", leave=False, disable=len(expanded_racks) <= 1):
+                for expanded_rack in expanded_racks:
                     if len(unique_move_keys) >= max_moves:
                         break
                     
-                    for pattern in tqdm(patterns, desc="Patterns", leave=False, disable=len(patterns) < 5):
+                    for pattern in patterns:
                         if len(unique_move_keys) >= max_moves:
                             break
                         
@@ -586,7 +592,7 @@ def generate_moves(
                                         break
                                     
                                     # Try each adjacent position as a starting point
-                                    for start_row, start_col in tqdm(adjacent_positions, desc="Positions", leave=False, disable=len(adjacent_positions) < 5):
+                                    for start_row, start_col in adjacent_positions:
                                         if len(unique_move_keys) >= max_moves:
                                             break
                                         

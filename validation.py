@@ -129,7 +129,13 @@ def validate_play(
             current_sequence = []
             for c_seq in range(15):
                 if temp_board[r][c_seq] != ' ':
-                    current_sequence.append((r, c_seq, temp_board[r][c_seq]))
+                    tile = temp_board[r][c_seq]
+                    # If it's a locked compound tile, use the locked value
+                    resolved = _get_compound_resolved_value(tile)
+                    if resolved:
+                        current_sequence.append((r, c_seq, resolved))
+                    else:
+                        current_sequence.append((r, c_seq, tile))
                 else:
                     if current_sequence:
                         # Check if this sequence includes any new tiles
@@ -216,7 +222,13 @@ def validate_play(
             current_sequence = []
             for r_seq in range(15):
                 if temp_board[r_seq][c] != ' ':
-                    current_sequence.append((r_seq, c, temp_board[r_seq][c]))
+                    tile = temp_board[r_seq][c]
+                    # If it's a locked compound tile, use the locked value
+                    resolved = _get_compound_resolved_value(tile)
+                    if resolved:
+                        current_sequence.append((r_seq, c, resolved))
+                    else:
+                        current_sequence.append((r_seq, c, tile))
                 else:
                     if current_sequence:
                         # Check if this sequence includes any new tiles
@@ -427,6 +439,19 @@ def validate_play(
     return True, None, parsed_equations if debug else None
 
 
+def _get_compound_resolved_value(tile: str) -> Optional[str]:
+    """
+    Get the resolved value of a compound tile if it's locked in.
+    Returns None if not a locked compound tile.
+    Format: "symbol:resolved" (e.g., "+/-:+" or "×/÷:×")
+    """
+    if ':' in tile:
+        parts = tile.split(':', 1)
+        if len(parts) == 2 and parts[0] in ['×/÷', '+/-']:
+            return parts[1]  # Return the resolved value
+    return None
+
+
 def extract_equation(
     board: List[List[str]],
     row: Optional[int],
@@ -436,6 +461,7 @@ def extract_equation(
     """
     Extract a complete equation from a row or column.
     Returns list of (row, col, tile) tuples, or None if no equation found.
+    For locked compound tiles, returns the locked value.
     """
     if is_horizontal:
         if row is None:
@@ -456,7 +482,13 @@ def extract_equation(
         # Extract all tiles in this range
         for c in range(start_col, end_col + 1):
             if board[row][c] != ' ':
-                tiles.append((row, c, board[row][c]))
+                tile = board[row][c]
+                # If it's a locked compound tile, use the resolved value
+                resolved = _get_compound_resolved_value(tile)
+                if resolved:
+                    tiles.append((row, c, resolved))
+                else:
+                    tiles.append((row, c, tile))
         
         # Only return if there's an equals sign (it's an equation)
         if any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in tiles):
@@ -480,7 +512,13 @@ def extract_equation(
         # Extract all tiles in this range
         for r in range(start_row, end_row + 1):
             if board[r][col] != ' ':
-                tiles.append((r, col, board[r][col]))
+                tile = board[r][col]
+                # If it's a locked compound tile, use the resolved value
+                resolved = _get_compound_resolved_value(tile)
+                if resolved:
+                    tiles.append((r, col, resolved))
+                else:
+                    tiles.append((r, col, tile))
         
         # Only return if there's an equals sign
         if any(tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=') for _, _, tile in tiles):
@@ -506,8 +544,20 @@ def validate_equation(
     
     # NOTE: Handle blank tiles - try all possible values
     # NOTE: Handle compound tiles - try all combinations (2^x possibilities)
+    # NOTE: But if a compound tile is already locked in (format: "symbol:resolved"), use that value
     blank_indices = [i for i, t in enumerate(tiles) if is_blank_tile(t)]
-    compound_indices = [i for i, t in enumerate(tiles) if t in ['×/÷', '+/-']]
+    compound_indices = []
+    locked_compound_values = {}  # Map index -> locked resolved value
+    
+    for i, (r, c, tile) in enumerate(equation):
+        # Check if this is a locked compound tile (format: "symbol:resolved")
+        resolved = _get_compound_resolved_value(tile)
+        if resolved:
+            # This compound tile is already locked in - use its resolved value
+            locked_compound_values[i] = resolved
+        elif tile in ['×/÷', '+/-']:
+            # This is a new compound tile - need to try all combinations
+            compound_indices.append(i)
     
     # Generate all combinations
     blank_combinations = []
@@ -523,9 +573,10 @@ def validate_equation(
     
     compound_combinations = []
     for idx in compound_indices:
-        if tiles[idx] == '×/÷':
+        tile = tiles[idx]
+        if tile == '×/÷':
             compound_combinations.append(['×', '÷'])
-        elif tiles[idx] == '+/-':
+        elif tile == '+/-':
             compound_combinations.append(['+', '-'])
     
     # Try all combinations
@@ -547,7 +598,13 @@ def validate_equation(
                     test_tiles[i] = resolved_value
                     resolved_sequence.append((r, c, resolved_value))
                     blank_idx += 1
+                elif i in locked_compound_values:
+                    # This compound tile is already locked in - use the locked value
+                    resolved_value = locked_compound_values[i]
+                    test_tiles[i] = resolved_value
+                    resolved_sequence.append((r, c, resolved_value))
                 elif tile in ['×/÷', '+/-']:
+                    # New compound tile - use value from combination
                     resolved_value = compound_combo[compound_idx]
                     test_tiles[i] = resolved_value
                     resolved_sequence.append((r, c, resolved_value))
@@ -561,11 +618,26 @@ def validate_equation(
                 if return_resolved:
                     return True, None, resolved_sequence
                 return True, None
-            # Keep track of the first specific error encountered (for better error messages)
-            if error and first_error is None:
-                first_error = error
-                if return_resolved:
-                    first_resolved_sequence = resolved_sequence
+            # Keep track of errors, but prioritize showing the '-' combination for +/- if it exists
+            # This helps with debugging when user expects '-' but sees '+' in parsed equations
+            if error:
+                if first_error is None:
+                    first_error = error
+                    if return_resolved:
+                        first_resolved_sequence = resolved_sequence
+                # If this is the '-' combination for '+/-', prefer it for display
+                elif return_resolved and first_resolved_sequence:
+                    # Check if current combo has '-' for any '+/-' tile
+                    has_minus_combo = False
+                    combo_idx = 0
+                    for idx in compound_indices:
+                        if tiles[idx] == '+/-' and compound_combo[combo_idx] == '-':
+                            has_minus_combo = True
+                            break
+                        combo_idx += 1
+                    if has_minus_combo:
+                        first_error = error
+                        first_resolved_sequence = resolved_sequence
     
     # Return a more specific error if we found one, otherwise generic message
     if return_resolved:
@@ -974,14 +1046,21 @@ def validate_operator_placement_single_with_new_tiles(
                         all_invalid = True
                         for neighbor_opt in neighbor_options:
                             if neighbor_opt == '=' or neighbor_opt in ['+', '-', '×', '÷']:
-                                # If this is a minus making a negative number, it's OK
+                                # If this is a minus making a negative number, it's OK (check validity later)
                                 if tile == '-' and _is_making_negative_number(board, row, col):
                                     all_invalid = False
                                     break
-                                # If neighbor is minus making a negative number, it's OK
+                                # If neighbor is minus making a negative number, it's OK (check validity later)
                                 if neighbor_opt == '-' and _is_making_negative_number(board, nr, nc):
                                     all_invalid = False
                                     break
+                                # Special case: if this is a minus after another minus, and the neighbor minus
+                                # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
+                                if tile == '-' and neighbor_opt == '-':
+                                    # Check if neighbor minus is making a negative number
+                                    if _is_making_negative_number(board, nr, nc):
+                                        all_invalid = False
+                                        break
                         
                         if all_invalid:
                             return "Operators cannot be placed directly next to each other"
@@ -994,13 +1073,26 @@ def validate_operator_placement_single_with_new_tiles(
                     # NOTE: Operators cannot be adjacent EXCEPT:
                     # - Minus can be after = or other operators if making a negative number
                     # - Minus can be at start of expression for negative numbers
+                    # - Minus can be after another minus if the second minus is making a negative number
                     if neighbor_value == '=' or neighbor_value in ['+', '-', '×', '÷']:
-                        # If this is a minus making a negative number, it's OK
+                        # If this is a minus making a negative number, it's OK (check validity later)
                         if tile == '-' and _is_making_negative_number(board, row, col):
+                            # Check if the negative number is valid (not 0, not 17-19)
+                            # This check happens later in the function, so just continue here
                             continue
-                        # If neighbor is minus making a negative number, it's OK
+                        # If neighbor is minus making a negative number, it's OK (check validity later)
                         if neighbor_value == '-' and _is_making_negative_number(board, nr, nc):
+                            # Check if the negative number is valid (not 0, not 17-19)
+                            # This check happens later in the function, so just continue here
                             continue
+                        # Special case: if this is a minus after another minus, and the neighbor minus
+                        # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
+                        if tile == '-' and neighbor_value == '-':
+                            # Check if neighbor minus is making a negative number
+                            if _is_making_negative_number(board, nr, nc):
+                                # This is OK - the second minus is a negative sign
+                                # Validity of the negative number will be checked later
+                                continue
                         # Otherwise, operators are adjacent and invalid
                         return "Operators cannot be placed directly next to each other"
     
@@ -1049,6 +1141,60 @@ def validate_operator_placement_single_with_new_tiles(
                         has_zero_after = True
             if has_zero_after:
                 return "Minus sign cannot be placed in front of 0"
+            
+            # Check if making negative from 17, 18, or 19
+            # Need to extract the number after the minus sign
+            number_tiles = []
+            # Check right
+            if col < 14:
+                c = col + 1
+                while c < 15 and board[row][c] != ' ':
+                    tile_val = board[row][c]
+                    # Handle locked compound tiles
+                    resolved = _get_compound_resolved_value(tile_val)
+                    if resolved and resolved in NUMBER_TILES:
+                        number_tiles.append(resolved)
+                    elif is_blank_tile(tile_val):
+                        val = get_blank_value(tile_val)
+                        if val in NUMBER_TILES:
+                            number_tiles.append(val)
+                        else:
+                            break
+                    elif is_number_tile(tile_val):
+                        number_tiles.append(tile_val)
+                    else:
+                        break
+                    c += 1
+            # Check down if no horizontal number found
+            if not number_tiles and row < 14:
+                r = row + 1
+                while r < 15 and board[r][col] != ' ':
+                    tile_val = board[r][col]
+                    # Handle locked compound tiles
+                    resolved = _get_compound_resolved_value(tile_val)
+                    if resolved and resolved in NUMBER_TILES:
+                        number_tiles.append(resolved)
+                    elif is_blank_tile(tile_val):
+                        val = get_blank_value(tile_val)
+                        if val in NUMBER_TILES:
+                            number_tiles.append(val)
+                        else:
+                            break
+                    elif is_number_tile(tile_val):
+                        number_tiles.append(tile_val)
+                    else:
+                        break
+                    r += 1
+            
+            # Form the number from tiles
+            if number_tiles:
+                number_str = ''.join(number_tiles)
+                try:
+                    number_value = int(number_str)
+                    if number_value in [17, 18, 19]:
+                        return f"Negative numbers cannot be made from {number_value}. Only 1-16, 20, or valid compound numbers but not 17, 18, or 19"
+                except ValueError:
+                    pass  # Invalid number format, will be caught elsewhere
     
     return None
 
@@ -1088,23 +1234,39 @@ def validate_operator_placement_single(
                         # - Minus can be after = or other operators if making a negative number
                         # - Minus can be at start of expression for negative numbers
                         if neighbor_value == '=' or neighbor_value in ['+', '-', '×', '÷']:
-                            # If this is a minus making a negative number, it's OK
+                            # If this is a minus making a negative number, it's OK (check validity later)
                             if tile == '-' and _is_making_negative_number(board, row, col):
                                 continue
-                            # If neighbor is minus making a negative number, it's OK
+                            # If neighbor is minus making a negative number, it's OK (check validity later)
                             if neighbor_value == '-' and _is_making_negative_number(board, nr, nc):
                                 continue
+                            # Special case: if this is a minus after another minus, and the neighbor minus
+                            # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
+                            if tile == '-' and neighbor_value == '-':
+                                # Check if neighbor minus is making a negative number
+                                if _is_making_negative_number(board, nr, nc):
+                                    # This is OK - the second minus is a negative sign
+                                    # Validity of the negative number will be checked later
+                                    continue
                             # Otherwise, operators are adjacent and invalid
                             return "Operators cannot be placed directly next to each other"
                 elif neighbor in ['+', '-', '×', '÷', '=']:
                     # Same logic for non-blank operators
                     if neighbor == '=' or neighbor in ['+', '-', '×', '÷']:
-                        # If this is a minus making a negative number, it's OK
+                        # If this is a minus making a negative number, it's OK (check validity later)
                         if tile == '-' and _is_making_negative_number(board, row, col):
                             continue
-                        # If neighbor is minus making a negative number, it's OK
+                        # If neighbor is minus making a negative number, it's OK (check validity later)
                         if neighbor == '-' and _is_making_negative_number(board, nr, nc):
                             continue
+                        # Special case: if this is a minus after another minus, and the neighbor minus
+                        # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
+                        if tile == '-' and neighbor == '-':
+                            # Check if neighbor minus is making a negative number
+                            if _is_making_negative_number(board, nr, nc):
+                                # This is OK - the second minus is a negative sign
+                                # Validity of the negative number will be checked later
+                                continue
                         # Otherwise, operators are adjacent and invalid
                         return "Operators cannot be placed directly next to each other"
     

@@ -99,7 +99,7 @@ def process_command(game: AMathGame, command: str) -> bool:
         return False
     elif cmd == 'new':
         game.new_game()
-        # game.show_state()
+        game.show_state()
     elif cmd == 'commit':
         if len(parts) < 3:
             print("Usage: commit <coord> <tiles>")

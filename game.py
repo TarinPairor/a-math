@@ -283,6 +283,7 @@ class AMathGame:
                         if original_board[current_row][current_col] == ' ':
                             new_tiles.append((current_row, current_col, tile_key))
                         # Place the tile directly (no rack checking)
+                        # For compound tiles, we'll lock in the resolved value after validation
                         self.board[current_row][current_col] = tile_key
                     else:
                         # Error - restore board and return False
@@ -311,20 +312,16 @@ class AMathGame:
                 if parsed_equations:
                     print("\nParsed equations:")
                     for direction, sequence in parsed_equations:
-                        # Resolve compound tiles and blank tiles for display
+                        # Show resolved values (locked compound tiles show their locked value)
                         resolved_tiles = []
                         for _, _, tile in sequence:
-                            if tile in ['×/÷', '+/-']:
-                                # Show both possibilities for compound tiles
-                                if tile == '+/-':
-                                    resolved_tiles.append('+/-')
-                                else:
-                                    resolved_tiles.append('×/÷')
-                            elif is_blank_tile(tile):
+                            if is_blank_tile(tile):
                                 # Show blank tile value
                                 blank_value = get_blank_value(tile)
                                 resolved_tiles.append(blank_value)
                             else:
+                                # For locked compound tiles, show the locked value
+                                # For regular tiles, show as-is
                                 resolved_tiles.append(tile)
                         tiles_str = ' '.join(resolved_tiles)
                         print(f"  {direction}: {tiles_str}")
@@ -336,23 +333,44 @@ class AMathGame:
                 if parsed_equations:
                     print("\nParsed equations:")
                     for direction, sequence in parsed_equations:
-                        # Resolve compound tiles and blank tiles for display
+                        # Show resolved values (locked compound tiles show their locked value)
                         resolved_tiles = []
                         for _, _, tile in sequence:
-                            if tile in ['×/÷', '+/-']:
-                                # Show both possibilities for compound tiles
-                                if tile == '+/-':
-                                    resolved_tiles.append('+/-')
-                                else:
-                                    resolved_tiles.append('×/÷')
-                            elif is_blank_tile(tile):
+                            if is_blank_tile(tile):
                                 # Show blank tile value
                                 blank_value = get_blank_value(tile)
                                 resolved_tiles.append(blank_value)
                             else:
+                                # For locked compound tiles, show the locked value
+                                # For regular tiles, show as-is
                                 resolved_tiles.append(tile)
                         tiles_str = ' '.join(resolved_tiles)
                         print(f"  {direction}: {tiles_str}")
+                
+                # NOTE: Lock in resolved values for compound tiles that were just placed
+                # Find the resolved sequence from parsed_equations and lock in compound tile values
+                if parsed_equations:
+                    # Get the first valid resolved sequence (from the play direction equation)
+                    resolved_sequence = None
+                    for direction, sequence in parsed_equations:
+                        # Prefer the play direction equation
+                        if (is_horizontal and 'horizontal' in direction) or (not is_horizontal and 'vertical' in direction):
+                            resolved_sequence = sequence
+                            break
+                    # If not found, use the first one
+                    if not resolved_sequence and parsed_equations:
+                        resolved_sequence = parsed_equations[0][1]
+                    
+                    # Lock in compound tile values
+                    if resolved_sequence:
+                        for r, c, resolved_tile in resolved_sequence:
+                            # Check if this position has a compound tile that was just placed
+                            if (r, c) in [(nr, nc) for nr, nc, _ in new_tiles]:
+                                board_tile = self.board[r][c]
+                                if board_tile in ['×/÷', '+/-']:
+                                    # This is a new compound tile - lock in the resolved value
+                                    # Store as "symbol:resolved" format
+                                    self.board[r][c] = f"{board_tile}:{resolved_tile}"
         
         # Success - advance turn and save state
         self.turn += 1
@@ -360,11 +378,18 @@ class AMathGame:
         return True
     
     def get_tile(self, coord: str) -> Optional[str]:
-        """Get tile at coordinate"""
+        """Get tile at coordinate. For locked compound tiles, returns the compound symbol."""
         row, col, _ = self._parse_coord(coord)
         if 0 <= row < 15 and 0 <= col < 15:
             tile = self.board[row][col]
-            return tile if tile != ' ' else None
+            if tile == ' ':
+                return None
+            # If it's a locked compound tile, return just the compound symbol
+            if ':' in tile:
+                parts = tile.split(':', 1)
+                if len(parts) == 2 and parts[0] in ['×/÷', '+/-']:
+                    return parts[0]  # Return the compound symbol
+            return tile
         return None
     
     def _resolve_tile(self, identifier: str) -> Optional[str]:
