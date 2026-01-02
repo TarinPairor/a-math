@@ -41,6 +41,10 @@ def display_board(chars: dict, board: list):
                         for char in centered_base
                     )
                     row_display.append(marked_value)
+                elif ':' in tile and tile.split(':', 1)[0] in ['×/÷', '+/-']:
+                    # Locked compound tile - show the compound symbol (before :)
+                    compound_symbol = tile.split(':', 1)[0]
+                    row_display.append(compound_symbol.center(3))
                 elif tile in chars:
                     # Display the actual tile key, not the UI
                     display_key = tile
