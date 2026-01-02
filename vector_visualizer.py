@@ -159,31 +159,14 @@ class VectorVisualizer:
                             count = adjacent_counts[above_row][col]
                             if count is not None:
                                 h_count, v_count = count
-                                # Check if it's 0/y where y > 0
-                                if h_count == 0 and v_count > 0:
-                                    # Check if this 0/y is not adjacent to other 0/y's on the horizontal axis
-                                    has_adjacent_0y = False
-                                    # Check left
-                                    if col > 0:
-                                        left_count = adjacent_counts[above_row][col - 1]
-                                        if left_count is not None:
-                                            lh, lv = left_count
-                                            if lh == 0 and lv > 0:
-                                                has_adjacent_0y = True
-                                    # Check right
-                                    if not has_adjacent_0y and col < N - 1:
-                                        right_count = adjacent_counts[above_row][col + 1]
-                                        if right_count is not None:
-                                            rh, rv = right_count
-                                            if rh == 0 and rv > 0:
-                                                has_adjacent_0y = True
-                                    
-                                    if not has_adjacent_0y:
-                                        # Create horizontal vector spanning entire row
-                                        hook_vec = Vector(above_row, 0, above_row, N - 1, True)
-                                        if hook_vec not in hook_vectors:
-                                            hook_vectors.append(hook_vec)
-                                        break  # Only need one 0/y to create the row vector
+                                # Check if it's 0/y where y >= 7 (0/7, 0/8, 0/9, etc.)
+                                # TO CHANGE BACK: replace "v_count >= 7" with "v_count > 0"
+                                if h_count == 0 and v_count >= 7:
+                                    # Create horizontal vector spanning entire row
+                                    hook_vec = Vector(above_row, 0, above_row, N - 1, True)
+                                    if hook_vec not in hook_vectors:
+                                        hook_vectors.append(hook_vec)
+                                    break  # Only need one 0/y to create the row vector
             
             else:
                 # Vertical play: check the column to the left and right for x/0 cells
@@ -198,31 +181,14 @@ class VectorVisualizer:
                             count = adjacent_counts[row][left_col]
                             if count is not None:
                                 h_count, v_count = count
-                                # Check if it's x/0 where x > 0
-                                if h_count > 0 and v_count == 0:
-                                    # Check if this x/0 is not adjacent to other x/0's on the vertical axis
-                                    has_adjacent_x0 = False
-                                    # Check above
-                                    if row > 0:
-                                        above_count = adjacent_counts[row - 1][left_col]
-                                        if above_count is not None:
-                                            ah, av = above_count
-                                            if ah > 0 and av == 0:
-                                                has_adjacent_x0 = True
-                                    # Check below
-                                    if not has_adjacent_x0 and row < N - 1:
-                                        below_count = adjacent_counts[row + 1][left_col]
-                                        if below_count is not None:
-                                            bh, bv = below_count
-                                            if bh > 0 and bv == 0:
-                                                has_adjacent_x0 = True
-                                    
-                                    if not has_adjacent_x0:
-                                        # Create vertical vector spanning entire column
-                                        hook_vec = Vector(0, left_col, N - 1, left_col, False)
-                                        if hook_vec not in hook_vectors:
-                                            hook_vectors.append(hook_vec)
-                                        break  # Only need one x/0 to create the column vector
+                                # Check if it's x/0 where x >= 7 (7/0, 8/0, 9/0, etc.)
+                                # TO CHANGE BACK: replace "h_count >= 7" with "h_count > 0"
+                                if h_count >= 7 and v_count == 0:
+                                    # Create vertical vector spanning entire column
+                                    hook_vec = Vector(0, left_col, N - 1, left_col, False)
+                                    if hook_vec not in hook_vectors:
+                                        hook_vectors.append(hook_vec)
+                                    break  # Only need one x/0 to create the column vector
         
         return hook_vectors
     
@@ -234,10 +200,16 @@ class VectorVisualizer:
         """
         if is_horizontal:
             # Horizontal vector: invalid if (0/1), (1/1), or (2/1)
-            return (h_count, v_count) in [(0, 1), (1, 1), (2, 1)]
+            # TO ADD 0/x (any x > 0): uncomment the line below and comment out the return statement
+            # return (h_count, v_count) in [(0, 1), (1, 1), (2, 1)] or (h_count == 0 and v_count > 0)
+            # return (h_count, v_count) in [(0, 1), (1, 1), (2, 1)]
+            return h_count > 0 and v_count > 0
         else:
             # Vertical vector: invalid if (1/0), (1/1), or (1/2)
-            return (h_count, v_count) in [(1, 0), (1, 1), (1, 2)]
+            # TO ADD x/0 (any x > 0): uncomment the line below and comment out the return statement
+            # return (h_count, v_count) in [(1, 0), (1, 1), (1, 2)] or (h_count > 0 and v_count == 0)
+            # return (h_count, v_count) in [(1, 0), (1, 1), (1, 2)]
+            return h_count > 0 and v_count > 0
     
     def filter_vectors_by_adjacent(self, vectors: List[Vector], adjacent_counts: List[List[Tuple[int, int] | None]]) -> List[Vector]:
         """
@@ -528,22 +500,28 @@ class VectorVisualizer:
         all_vectors = valid_vectors + hook_vectors
         
         # Filter vectors by removing parts with invalid adjacent cells
-        filtered_vectors = self.filter_vectors_by_adjacent(all_vectors, adjacent_counts)
+        filtered_vectors = self.filter_vectors_by_adjacent(valid_vectors, adjacent_counts)
         
         # Remove vectors that don't contain any marked tiles (but keep hook vectors)
         # Hook vectors are potential play areas and don't need marked tiles
-        filtered_non_hook = self.filter_vectors_with_marked_tiles(
-            [v for v in filtered_vectors if v not in hook_vectors]
-        )
-        filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
+        # filtered_non_hook = self.filter_vectors_with_marked_tiles(
+        #     [v for v in filtered_vectors if v not in hook_vectors]
+        # )
+        # filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
         
+        filtered_vectors = self.filter_vectors_with_marked_tiles(filtered_vectors)
+
         # Filter vectors by distance: remove cells more than 8 tiles away from any marked tile
         # But keep hook vectors (they're adjacent to existing plays, so they're valid)
-        filtered_non_hook = self.filter_vectors_by_distance(
-            [v for v in filtered_vectors if v not in hook_vectors]
-        )
-        filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
+        # filtered_non_hook = self.filter_vectors_by_distance(
+        #     [v for v in filtered_vectors if v not in hook_vectors]
+        # )
+        # filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
         
+        filtered_vectors = self.filter_vectors_by_distance(filtered_vectors) 
+
+        filtered_vectors += hook_vectors
+
         # Update cell states based on filtered vectors (re-mark valid cells)
         # First, reset valid cells that were marked by original vectors
         for row in range(N):
