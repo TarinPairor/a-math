@@ -147,6 +147,7 @@ class AMathGame:
         coord: coordinate string (e.g., "8G" or "G8")
         tiles_str: Comma-separated string of tile identifiers (e.g., "1,+,12,+/-,3,=,.,.")
         Use "." to indicate existing tiles (skip position)
+        Use "?value" to indicate blank tiles (e.g., "?0", "?5", "?+")
         Returns True if successful, False if there were errors
         """
         # Save current state for rollback if needed
@@ -200,9 +201,9 @@ class AMathGame:
                         return False
                     # Just move to next position without placing anything
                     pass
-                elif identifier.startswith('(') and identifier.endswith(')'):
-                    # Blank tile with value: (value) format
-                    blank_value = identifier[1:-1]  # Remove parentheses
+                elif identifier.startswith('?'):
+                    # Blank tile with value: ?value format
+                    blank_value = identifier[1:]  # Remove '?' prefix
                     
                     # Validate blank value: must be a valid single value (0-20, +, -, ×, ÷, =)
                     # First try to resolve as alias (e.g., "/" -> "÷", "*" -> "×")
@@ -250,7 +251,7 @@ class AMathGame:
                             # Check if previous identifier is also a number tile
                             if current_idx > 0:
                                 prev_id = identifiers[current_idx - 1].strip()
-                                if prev_id != '.' and not (prev_id.startswith('(') and prev_id.endswith(')')):
+                                if prev_id != '.' and not prev_id.startswith('?'):
                                     prev_tile = self._resolve_tile(prev_id)
                                     # if prev_tile and prev_tile in NUMBER_TILES:
                                     #     # Invalid: number tile followed by multi-digit tile
@@ -262,7 +263,7 @@ class AMathGame:
                             # Check if next identifier is also a number tile
                             if current_idx + 1 < len(identifiers):
                                 next_id = identifiers[current_idx + 1].strip()
-                                if next_id != '.' and not (next_id.startswith('(') and next_id.endswith(')')):
+                                if next_id != '.' and not next_id.startswith('?'):
                                     next_tile = self._resolve_tile(next_id)
                                     # if next_tile and next_tile in NUMBER_TILES:
                                     #     # Invalid: multi-digit tile followed by number tile
