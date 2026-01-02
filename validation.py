@@ -354,87 +354,54 @@ def validate_play(
                 return False, error, parsed_equations if debug else None
     
     # NOTE: Validate operator placement rules
-    # NOTE: For compound tiles (+/-, ×/÷), we need to check all combinations together
+    # NOTE: For compound tiles (+/-, ×/÷), they must be declared when placed
     # Extract all affected positions with operators or compound tiles
     operator_positions = []
-    compound_positions = []
     new_tile_positions = {(r, c) for r, c, _ in new_tiles}
     
     for r, c, tile in new_tiles:
         if is_operator_tile(tile) or is_blank_tile(tile) or tile in ['×/÷', '+/-']:
             operator_positions.append((r, c, tile))
+            # Check if this is a new compound tile without a declared value
             if tile in ['×/÷', '+/-']:
-                compound_positions.append((r, c, tile))
+                # New compound tile must have a declared value (stored as "symbol:resolved")
+                # If it's just the symbol, that's an error
+                if temp_board[r][c] == tile:
+                    # The tile on the board is just the symbol, not declared
+                    return False, f"Compound tile '{tile}' at {chr(ord('A')+c)}{r+1} must be declared with a value. Use format like '+/?+' or '23?21'", parsed_equations if debug else None
     
-    # If there are compound tiles, we need to check all combinations together
-    if compound_positions:
-        # Generate all combinations for all compound tiles
-        all_compound_combos = []
-        for r, c, tile in compound_positions:
-            if tile == '+/-':
-                all_compound_combos.append(['+', '-'])
-            else:  # ×/÷
-                all_compound_combos.append(['×', '÷'])
+    # Validate all operator positions
+    # For compound tiles, use the declared value from the board
+    for r, c, tile in operator_positions:
+        # Get the actual tile from the board (may have declared value)
+        board_tile = temp_board[r][c]
         
-        # Try all combinations using itertools.product
-        from itertools import product
-        all_combos = list(product(*all_compound_combos))
+        # Resolve the tile value
+        if is_blank_tile(board_tile):
+            resolved_tile = get_blank_value(board_tile)
+            if resolved_tile not in ['+', '-', '×', '÷', '=']:
+                continue  # Not an operator blank
+        elif board_tile in ['×/÷', '+/-']:
+            # Compound tile without declared value - should have been caught above
+            return False, f"Compound tile '{board_tile}' at {chr(ord('A')+c)}{r+1} must be declared with a value", parsed_equations if debug else None
+        else:
+            # Check if it's a locked compound tile (format: "symbol:resolved")
+            resolved = _get_compound_resolved_value(board_tile)
+            if resolved:
+                resolved_tile = resolved
+            else:
+                resolved_tile = board_tile
         
-        # Check if ANY combination is valid
-        has_valid_combination = False
-        first_error = None
+        if resolved_tile not in ['+', '-', '×', '÷', '=']:
+            continue
         
-        for combo in all_combos:
-            # Create a test board with this combination
-            test_board = [row[:] for row in temp_board]
-            combo_idx = 0
-            for r, c, tile in compound_positions:
-                test_board[r][c] = combo[combo_idx]
-                combo_idx += 1
-            
-            # Validate all operator positions with this combination
-            # Need to check neighbors that are also new tiles
-            combo_valid = True
-            for r, c, tile in operator_positions:
-                # Resolve the tile value
-                if (r, c, tile) in compound_positions:
-                    # This is a compound tile - use the resolved value from combo
-                    combo_idx = compound_positions.index((r, c, tile))
-                    resolved_tile = combo[combo_idx]
-                elif is_blank_tile(tile):
-                    resolved_tile = get_blank_value(tile)
-                    if resolved_tile not in ['+', '-', '×', '÷', '=']:
-                        continue  # Not an operator blank
-                else:
-                    resolved_tile = tile
-                
-                if resolved_tile not in ['+', '-', '×', '÷', '=']:
-                    continue
-                
-                # Validate this operator, checking neighbors (including new tiles)
-                # Create a set of new tile positions for this validation
-                error = validate_operator_placement_single_with_new_tiles(
-                    test_board, r, c, resolved_tile, new_tile_positions, chars
-                )
-                
-                if error:
-                    combo_valid = False
-                    if first_error is None:
-                        first_error = error
-                    break
-            
-            if combo_valid:
-                has_valid_combination = True
-                break
+        # Validate this operator, checking neighbors (including new tiles)
+        error = validate_operator_placement_single_with_new_tiles(
+            temp_board, r, c, resolved_tile, new_tile_positions, chars
+        )
         
-        if not has_valid_combination:
-            return False, first_error or "Invalid operator placement with compound tiles", parsed_equations if debug else None
-    else:
-        # No compound tiles, just check each operator normally
-        for r, c, tile in operator_positions:
-            error = validate_operator_placement(temp_board, r, c, chars)
-            if error:
-                return False, error, parsed_equations if debug else None
+        if error:
+            return False, error, parsed_equations if debug else None
     
     return True, None, parsed_equations if debug else None
 
@@ -543,23 +510,24 @@ def validate_equation(
     tiles = [tile for _, _, tile in equation]
     
     # NOTE: Handle blank tiles - try all possible values
-    # NOTE: Handle compound tiles - try all combinations (2^x possibilities)
-    # NOTE: But if a compound tile is already locked in (format: "symbol:resolved"), use that value
+    # NOTE: Compound tiles must be declared when placed (format: "symbol:resolved")
+    # If a compound tile doesn't have a declared value, it's an error
     blank_indices = [i for i, t in enumerate(tiles) if is_blank_tile(t)]
-    compound_indices = []
     locked_compound_values = {}  # Map index -> locked resolved value
     
     for i, (r, c, tile) in enumerate(equation):
         # Check if this is a locked compound tile (format: "symbol:resolved")
         resolved = _get_compound_resolved_value(tile)
         if resolved:
-            # This compound tile is already locked in - use its resolved value
+            # This compound tile has a declared value - use it
             locked_compound_values[i] = resolved
         elif tile in ['×/÷', '+/-']:
-            # This is a new compound tile - need to try all combinations
-            compound_indices.append(i)
+            # This is a compound tile without a declared value - error
+            if return_resolved:
+                return False, f"Compound tile '{tile}' at position {i} must be declared with a value when placed", None
+            return False, f"Compound tile '{tile}' must be declared with a value when placed"
     
-    # Generate all combinations
+    # Generate all combinations for blank tiles only
     blank_combinations = []
     for idx in blank_indices:
         blank_value = get_blank_value(tiles[idx])
@@ -571,80 +539,47 @@ def validate_equation(
                 return False, f"Blank tile has invalid value: {blank_value}", None
             return False, f"Blank tile has invalid value: {blank_value}"
     
-    compound_combinations = []
-    for idx in compound_indices:
-        tile = tiles[idx]
-        if tile == '×/÷':
-            compound_combinations.append(['×', '÷'])
-        elif tile == '+/-':
-            compound_combinations.append(['+', '-'])
-    
-    # Try all combinations
+    # Try all combinations for blank tiles
     all_blank_combos = list(product(*blank_combinations)) if blank_combinations else [()]
-    all_compound_combos = list(product(*compound_combinations)) if compound_combinations else [()]
     
     first_error = None
     first_resolved_sequence = None
     for blank_combo in all_blank_combos:
-        for compound_combo in all_compound_combos:
-            # Create a test sequence with resolved tiles
-            test_tiles = tiles[:]
-            resolved_sequence = []
-            blank_idx = 0
-            compound_idx = 0
-            for i, (r, c, tile) in enumerate(equation):
-                if is_blank_tile(tile):
-                    resolved_value = blank_combo[blank_idx]
-                    test_tiles[i] = resolved_value
-                    resolved_sequence.append((r, c, resolved_value))
-                    blank_idx += 1
-                elif i in locked_compound_values:
-                    # This compound tile is already locked in - use the locked value
-                    resolved_value = locked_compound_values[i]
-                    test_tiles[i] = resolved_value
-                    resolved_sequence.append((r, c, resolved_value))
-                elif tile in ['×/÷', '+/-']:
-                    # New compound tile - use value from combination
-                    resolved_value = compound_combo[compound_idx]
-                    test_tiles[i] = resolved_value
-                    resolved_sequence.append((r, c, resolved_value))
-                    compound_idx += 1
-                else:
-                    resolved_sequence.append((r, c, tile))
-            
-            # Validate this combination
-            is_valid, error = validate_equation_sequence(test_tiles)
-            if is_valid:
-                if return_resolved:
-                    return True, None, resolved_sequence
-                return True, None
-            # Keep track of errors, but prioritize showing the '-' combination for +/- if it exists
-            # This helps with debugging when user expects '-' but sees '+' in parsed equations
-            if error:
-                if first_error is None:
-                    first_error = error
-                    if return_resolved:
-                        first_resolved_sequence = resolved_sequence
-                # If this is the '-' combination for '+/-', prefer it for display
-                elif return_resolved and first_resolved_sequence:
-                    # Check if current combo has '-' for any '+/-' tile
-                    has_minus_combo = False
-                    combo_idx = 0
-                    for idx in compound_indices:
-                        if tiles[idx] == '+/-' and compound_combo[combo_idx] == '-':
-                            has_minus_combo = True
-                            break
-                        combo_idx += 1
-                    if has_minus_combo:
-                        first_error = error
-                        first_resolved_sequence = resolved_sequence
+        # Create a test sequence with resolved tiles
+        test_tiles = tiles[:]
+        resolved_sequence = []
+        blank_idx = 0
+        for i, (r, c, tile) in enumerate(equation):
+            if is_blank_tile(tile):
+                resolved_value = blank_combo[blank_idx]
+                test_tiles[i] = resolved_value
+                resolved_sequence.append((r, c, resolved_value))
+                blank_idx += 1
+            elif i in locked_compound_values:
+                # Use the declared value
+                resolved_value = locked_compound_values[i]
+                test_tiles[i] = resolved_value
+                resolved_sequence.append((r, c, resolved_value))
+            else:
+                resolved_sequence.append((r, c, tile))
+        
+        # Validate this resolved sequence
+        is_valid, error = validate_equation_sequence(test_tiles)
+        if is_valid:
+            if return_resolved:
+                return True, None, resolved_sequence
+            return True, None
+        
+        if first_error is None:
+            first_error = error
+            first_resolved_sequence = resolved_sequence
     
-    # Return a more specific error if we found one, otherwise generic message
+    # No valid combination found
     if return_resolved:
-        return False, first_error or "No valid combination of blank tiles and compound tiles produces a valid equation", first_resolved_sequence
+        return False, first_error or "No valid combination of blank tiles produces a valid equation", first_resolved_sequence
     if first_error:
         return False, first_error
-    return False, "No valid combination of blank tiles and compound tiles produces a valid equation"
+    return False, "No valid combination of blank tiles produces a valid equation"
 
 
 def validate_equation_sequence(tiles: List[str]) -> Tuple[bool, Optional[str]]:

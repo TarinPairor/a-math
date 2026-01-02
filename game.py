@@ -239,6 +239,98 @@ class AMathGame:
                     if original_board[current_row][current_col] == ' ':
                         new_tiles.append((current_row, current_col, f"?{resolved_value}"))
                     self.board[current_row][current_col] = f"?{resolved_value}"
+                elif '?' in identifier and not identifier.startswith('?'):
+                    # Compound tile with declared value: format is "compound?resolved" or "index?index"
+                    # Examples: "+/?+", "+/?-", "*/?*", "*/?/", or "23?21"
+                    parts = identifier.split('?', 1)
+                    if len(parts) != 2:
+                        print(f"Error: Invalid compound tile declaration format '{identifier}'. Use format like '+/?+' or '23?21'")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
+                    compound_part = parts[0].strip()
+                    resolved_part = parts[1].strip()
+                    
+                    # Resolve the compound tile
+                    compound_tile = None
+                    if compound_part in ['+/-', '+/', '×/÷', '*/']:
+                        # Direct compound tile or alias
+                        if compound_part == '+/':
+                            compound_tile = '+/-'
+                        elif compound_part == '*/':
+                            compound_tile = '×/÷'
+                        else:
+                            compound_tile = compound_part
+                    else:
+                        # Try as index
+                        try:
+                            compound_index = int(compound_part)
+                            compound_tile = get_tile_by_index(self.chars, compound_index)
+                            if compound_tile not in ['+/-', '×/÷']:
+                                compound_tile = None
+                        except ValueError:
+                            pass
+                    
+                    if compound_tile is None:
+                        print(f"Error: Could not resolve compound tile from '{compound_part}'. Use '+/-', '+/', '×/÷', '*/', or the tile index.")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
+                    # Resolve the declared value
+                    resolved_value = None
+                    if resolved_part in ['+', '-', '×', '÷']:
+                        # Direct operator
+                        resolved_value = resolved_part
+                    elif resolved_part in ['*', '/']:
+                        # Alias
+                        if resolved_part == '*':
+                            resolved_value = '×'
+                        else:
+                            resolved_value = '÷'
+                    else:
+                        # Try as index
+                        try:
+                            resolved_index = int(resolved_part)
+                            resolved_tile = get_tile_by_index(self.chars, resolved_index)
+                            if resolved_tile in ['+', '-', '×', '÷']:
+                                resolved_value = resolved_tile
+                        except ValueError:
+                            pass
+                    
+                    if resolved_value is None:
+                        print(f"Error: Could not resolve declared value '{resolved_part}'. Must be '+', '-', '×', '÷', '*', '/', or the operator's index.")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
+                    # Validate that the resolved value is valid for this compound tile
+                    if compound_tile == '+/-' and resolved_value not in ['+', '-']:
+                        print(f"Error: '+/-' can only be resolved to '+' or '-', not '{resolved_value}'")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    if compound_tile == '×/÷' and resolved_value not in ['×', '÷']:
+                        print(f"Error: '×/÷' can only be resolved to '×' or '÷', not '{resolved_value}'")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
+                    # NOTE: Check that we're not overlapping with existing tiles
+                    if original_board[current_row][current_col] != ' ':
+                        print(f"Error: Cannot place tile at {chr(ord('A')+current_col)}{current_row+1}: position already occupied")
+                        self.board = original_board
+                        self.turn = original_turn
+                        return False
+                    
+                    # Store compound tile with declared value: "compound:resolved" format
+                    # Only add to new_tiles if this position was empty in original board
+                    # Store the compound tile with declared value in new_tiles for validation
+                    if original_board[current_row][current_col] == ' ':
+                        new_tiles.append((current_row, current_col, f"{compound_tile}:{resolved_value}"))
+                    # Store as "compound:resolved" on the board to track the declared value
+                    self.board[current_row][current_col] = f"{compound_tile}:{resolved_value}"
                 else:
                     # Resolve tile identifier to tile key
                     tile_key = self._resolve_tile(identifier)
