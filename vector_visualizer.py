@@ -71,27 +71,160 @@ class VectorVisualizer:
             return row, col
         return None
     
-    def count_adjacent_marked(self, row: int, col: int) -> Tuple[int, int]:
+    def count_contiguous_marked(self, row: int, col: int) -> Tuple[int, int]:
         """
-        Count how many marked cells are horizontally and vertically adjacent to a cell.
-        Returns (horizontal_count, vertical_count)
+        Count contiguous marked tiles along horizontal and vertical orientations.
+        For horizontal: counts contiguous marked tiles in the same row (left and right)
+        For vertical: counts contiguous marked tiles in the same column (up and down)
+        
+        Examples:
+        - xxax (where x is marked, a is this cell): returns (3, 0) - 3 contiguous horizontal
+        - xa: returns (1, 0) - 1 contiguous horizontal
+        - xxxax: returns (4, 0) - 4 contiguous horizontal
+        
+        Returns (horizontal_contiguous_count, vertical_contiguous_count)
         """
-        h_count = 0  # Horizontal adjacent (left and right)
-        v_count = 0  # Vertical adjacent (up and down)
+        h_count = 0  # Contiguous horizontal marked tiles
+        v_count = 0  # Contiguous vertical marked tiles
         
-        # Check left and right (horizontal)
-        if col > 0 and self.board[row][col - 1] != ' ':
+        # Count contiguous marked tiles horizontally (same row)
+        # Check left
+        c = col - 1
+        while c >= 0 and self.board[row][c] != ' ':
             h_count += 1
-        if col < N - 1 and self.board[row][col + 1] != ' ':
-            h_count += 1
+            c -= 1
         
-        # Check up and down (vertical)
-        if row > 0 and self.board[row - 1][col] != ' ':
+        # Check right
+        c = col + 1
+        while c < N and self.board[row][c] != ' ':
+            h_count += 1
+            c += 1
+        
+        # Count contiguous marked tiles vertically (same column)
+        # Check up
+        r = row - 1
+        while r >= 0 and self.board[r][col] != ' ':
             v_count += 1
-        if row < N - 1 and self.board[row + 1][col] != ' ':
+            r -= 1
+        
+        # Check down
+        r = row + 1
+        while r < N and self.board[r][col] != ' ':
             v_count += 1
+            r += 1
         
         return h_count, v_count
+    
+    def generate_front_hook_vectors(self, valid_vectors: List[Vector], adjacent_counts: List[List[Tuple[int, int] | None]], cell_states: List[List[str]]) -> List[Vector]:
+        """
+        Generate perpendicular "hook" vectors to existing plays.
+        
+        For horizontal plays: if to the left there's an x/0 (x > 0) that's not adjacent 
+        to other x/0's on the vertical axis, create a vertical vector spanning the entire column.
+        
+        For vertical plays: if above there's a 0/y (y > 0) that's not adjacent to other 
+        0/y's on the horizontal axis, create a horizontal vector spanning the entire row.
+        """
+        hook_vectors = []
+        
+        for vector in valid_vectors:
+            # Only process vectors that contain marked tiles
+            has_marked = False
+            if vector.is_horizontal:
+                row = vector.start_row
+                for col in range(vector.start_col, vector.end_col + 1):
+                    if self.board[row][col] != ' ':
+                        has_marked = True
+                        break
+            else:
+                col = vector.start_col
+                for row in range(vector.start_row, vector.end_row + 1):
+                    if self.board[row][col] != ' ':
+                        has_marked = True
+                        break
+            
+            if not has_marked:
+                continue
+            
+            if vector.is_horizontal:
+                # Horizontal play: check the row above and below for 0/y cells
+                row = vector.start_row
+                
+                # Check row above
+                above_row = row - 1
+                if above_row >= 0:
+                    # Check all cells in the row above for 0/y pattern
+                    for col in range(N):
+                        if cell_states[above_row][col] == 'adjacent_invalid':
+                            count = adjacent_counts[above_row][col]
+                            if count is not None:
+                                h_count, v_count = count
+                                # Check if it's 0/y where y > 0
+                                if h_count == 0 and v_count > 0:
+                                    # Check if this 0/y is not adjacent to other 0/y's on the horizontal axis
+                                    has_adjacent_0y = False
+                                    # Check left
+                                    if col > 0:
+                                        left_count = adjacent_counts[above_row][col - 1]
+                                        if left_count is not None:
+                                            lh, lv = left_count
+                                            if lh == 0 and lv > 0:
+                                                has_adjacent_0y = True
+                                    # Check right
+                                    if not has_adjacent_0y and col < N - 1:
+                                        right_count = adjacent_counts[above_row][col + 1]
+                                        if right_count is not None:
+                                            rh, rv = right_count
+                                            if rh == 0 and rv > 0:
+                                                has_adjacent_0y = True
+                                    
+                                    if not has_adjacent_0y:
+                                        # Create horizontal vector spanning entire row
+                                        hook_vec = Vector(above_row, 0, above_row, N - 1, True)
+                                        if hook_vec not in hook_vectors:
+                                            hook_vectors.append(hook_vec)
+                                        break  # Only need one 0/y to create the row vector
+            
+            else:
+                # Vertical play: check the column to the left and right for x/0 cells
+                col = vector.start_col
+                
+                # Check column to the left
+                left_col = col - 1
+                if left_col >= 0:
+                    # Check all cells in the column to the left for x/0 pattern
+                    for row in range(N):
+                        if cell_states[row][left_col] == 'adjacent_invalid':
+                            count = adjacent_counts[row][left_col]
+                            if count is not None:
+                                h_count, v_count = count
+                                # Check if it's x/0 where x > 0
+                                if h_count > 0 and v_count == 0:
+                                    # Check if this x/0 is not adjacent to other x/0's on the vertical axis
+                                    has_adjacent_x0 = False
+                                    # Check above
+                                    if row > 0:
+                                        above_count = adjacent_counts[row - 1][left_col]
+                                        if above_count is not None:
+                                            ah, av = above_count
+                                            if ah > 0 and av == 0:
+                                                has_adjacent_x0 = True
+                                    # Check below
+                                    if not has_adjacent_x0 and row < N - 1:
+                                        below_count = adjacent_counts[row + 1][left_col]
+                                        if below_count is not None:
+                                            bh, bv = below_count
+                                            if bh > 0 and bv == 0:
+                                                has_adjacent_x0 = True
+                                    
+                                    if not has_adjacent_x0:
+                                        # Create vertical vector spanning entire column
+                                        hook_vec = Vector(0, left_col, N - 1, left_col, False)
+                                        if hook_vec not in hook_vectors:
+                                            hook_vectors.append(hook_vec)
+                                        break  # Only need one x/0 to create the column vector
+        
+        return hook_vectors
     
     def is_invalid_adjacent_for_vector(self, h_count: int, v_count: int, is_horizontal: bool) -> bool:
         """
@@ -195,6 +328,111 @@ class VectorVisualizer:
         
         return filtered_vectors
     
+    def filter_vectors_by_distance(self, vectors: List[Vector]) -> List[Vector]:
+        """
+        Filter vectors by removing cells that are more than 8 tiles away from any marked tile
+        along the vector line. If a cell is within 8 tiles of at least one marked tile, it's valid.
+        """
+        filtered_vectors = []
+        MAX_DISTANCE = 8
+        
+        for vector in vectors:
+            if vector.is_horizontal:
+                # Horizontal vector: find all marked tiles along this row
+                row = vector.start_row
+                marked_positions = []
+                for col in range(vector.start_col, vector.end_col + 1):
+                    if self.board[row][col] != ' ':
+                        marked_positions.append(col)
+                
+                if not marked_positions:
+                    continue  # Skip if no marked tiles (shouldn't happen after previous filter)
+                
+                # Find valid segments: cells within MAX_DISTANCE of at least one marked tile
+                valid_segments = []
+                segment_start = None
+                
+                for col in range(vector.start_col, vector.end_col + 1):
+                    # Check if this cell is within MAX_DISTANCE of any marked tile
+                    is_valid = False
+                    for marked_col in marked_positions:
+                        distance = abs(col - marked_col)
+                        if distance <= MAX_DISTANCE:
+                            is_valid = True
+                            break
+                    
+                    if is_valid:
+                        # This cell is valid, continue or start a segment
+                        if segment_start is None:
+                            segment_start = col
+                    else:
+                        # This cell is invalid, end current segment if exists
+                        if segment_start is not None:
+                            segment_end = col - 1
+                            if segment_end > segment_start:  # At least 2 cells
+                                valid_segments.append((segment_start, segment_end))
+                            segment_start = None
+                
+                # Handle segment that extends to the end
+                if segment_start is not None:
+                    segment_end = vector.end_col
+                    if segment_end > segment_start:  # At least 2 cells
+                        valid_segments.append((segment_start, segment_end))
+                
+                # Create sub-vectors for each valid segment
+                for start_col, end_col in valid_segments:
+                    if end_col > start_col:  # At least 2 cells
+                        filtered_vectors.append(Vector(row, start_col, row, end_col, True))
+            
+            else:
+                # Vertical vector: find all marked tiles along this column
+                col = vector.start_col
+                marked_positions = []
+                for row in range(vector.start_row, vector.end_row + 1):
+                    if self.board[row][col] != ' ':
+                        marked_positions.append(row)
+                
+                if not marked_positions:
+                    continue  # Skip if no marked tiles (shouldn't happen after previous filter)
+                
+                # Find valid segments: cells within MAX_DISTANCE of at least one marked tile
+                valid_segments = []
+                segment_start = None
+                
+                for row in range(vector.start_row, vector.end_row + 1):
+                    # Check if this cell is within MAX_DISTANCE of any marked tile
+                    is_valid = False
+                    for marked_row in marked_positions:
+                        distance = abs(row - marked_row)
+                        if distance <= MAX_DISTANCE:
+                            is_valid = True
+                            break
+                    
+                    if is_valid:
+                        # This cell is valid, continue or start a segment
+                        if segment_start is None:
+                            segment_start = row
+                    else:
+                        # This cell is invalid, end current segment if exists
+                        if segment_start is not None:
+                            segment_end = row - 1
+                            if segment_end > segment_start:  # At least 2 cells
+                                valid_segments.append((segment_start, segment_end))
+                            segment_start = None
+                
+                # Handle segment that extends to the end
+                if segment_start is not None:
+                    segment_end = vector.end_row
+                    if segment_end > segment_start:  # At least 2 cells
+                        valid_segments.append((segment_start, segment_end))
+                
+                # Create sub-vectors for each valid segment
+                for start_row, end_row in valid_segments:
+                    if end_row > start_row:  # At least 2 cells
+                        filtered_vectors.append(Vector(start_row, col, end_row, col, False))
+        
+        return filtered_vectors
+    
     def filter_vectors_with_marked_tiles(self, vectors: List[Vector]) -> List[Vector]:
         """
         Remove all vectors that don't contain at least one marked tile (X).
@@ -253,8 +491,8 @@ class VectorVisualizer:
                         if (0 <= adj_row < N and 0 <= adj_col < N and 
                             states[adj_row][adj_col] != 'marked'):
                             states[adj_row][adj_col] = 'adjacent_invalid'
-                            # Count adjacent marked cells for this adjacent cell
-                            h_count, v_count = self.count_adjacent_marked(adj_row, adj_col)
+                            # Count contiguous marked cells for this adjacent cell
+                            h_count, v_count = self.count_contiguous_marked(adj_row, adj_col)
                             adjacent_counts[adj_row][adj_col] = (h_count, v_count)
         
         # Mark cells on valid vectors as 'valid' (but not if already marked or adjacent_invalid)
@@ -283,11 +521,28 @@ class VectorVisualizer:
         # Compute all cell states and adjacent counts (using original vectors)
         cell_states, adjacent_counts = self.compute_cell_states(valid_vectors)
         
-        # Filter vectors by removing parts with invalid adjacent cells
-        filtered_vectors = self.filter_vectors_by_adjacent(valid_vectors, adjacent_counts)
+        # Generate front hook vectors (perpendicular to existing plays)
+        hook_vectors = self.generate_front_hook_vectors(valid_vectors, adjacent_counts, cell_states)
         
-        # Remove vectors that don't contain any marked tiles
-        filtered_vectors = self.filter_vectors_with_marked_tiles(filtered_vectors)
+        # Combine original vectors with hook vectors before filtering
+        all_vectors = valid_vectors + hook_vectors
+        
+        # Filter vectors by removing parts with invalid adjacent cells
+        filtered_vectors = self.filter_vectors_by_adjacent(all_vectors, adjacent_counts)
+        
+        # Remove vectors that don't contain any marked tiles (but keep hook vectors)
+        # Hook vectors are potential play areas and don't need marked tiles
+        filtered_non_hook = self.filter_vectors_with_marked_tiles(
+            [v for v in filtered_vectors if v not in hook_vectors]
+        )
+        filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
+        
+        # Filter vectors by distance: remove cells more than 8 tiles away from any marked tile
+        # But keep hook vectors (they're adjacent to existing plays, so they're valid)
+        filtered_non_hook = self.filter_vectors_by_distance(
+            [v for v in filtered_vectors if v not in hook_vectors]
+        )
+        filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
         
         # Update cell states based on filtered vectors (re-mark valid cells)
         # First, reset valid cells that were marked by original vectors
