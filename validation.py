@@ -753,7 +753,7 @@ def evaluate_expression(tokens: List[str]) -> Tuple[bool, float]:
     # Handle negative numbers (minus sign before a number)
     # NOTE: Minus is only a negative sign if it's at the start or after an operator
     # If it's after a number, it's a subtraction operator
-    # NOTE: Negative numbers can only be made from 1-16, 20, or valid compound numbers (not 17, 18, 19)
+    # NOTE: Negative numbers can be made from 1-20 or valid compound numbers
     normalized = []
     i = 0
     while i < len(parsed):
@@ -762,10 +762,6 @@ def evaluate_expression(tokens: List[str]) -> Tuple[bool, float]:
             if i == 0 or (i > 0 and parsed[i-1][0] == 'operator'):
                 # Negative number (at start or after operator)
                 num_value = parsed[i+1][1]
-                # NOTE: Negative numbers can be made from 1-16, 20, or valid compound numbers
-                # EXCEPT 17, 18, 19 cannot be made negative (even if formed from digits)
-                if num_value in [17, 18, 19]:
-                    return False, f"Negative numbers cannot be made from {num_value}. Only 1-16, 20, or valid compound numbers but not 17, 18, or 19"
                 normalized.append(('number', -num_value))
                 i += 2
             else:
@@ -1018,82 +1014,72 @@ def validate_operator_placement_single_with_new_tiles(
         return None  # Not an operator
     
     # NOTE: Check for adjacent operators
-    # NOTE: Minus can be adjacent to = or other operators if it's making a negative number
+    # NOTE: Operators cannot be adjacent to each other, EXCEPT:
+    # - A minus sign at the start of an expression (before any number) is allowed
+    # - So -a+b is OK (negative sign - at start, followed by number a, then operator +)
+    # - But a+-b, a/-b, a*-b are NOT OK (operator next to operator)
+    # - And compound operators cannot be adjacent to other operators either
     neighbors = [(row-1, col), (row+1, col), (row, col-1), (row, col+1)]
     for nr, nc in neighbors:
         if 0 <= nr < 15 and 0 <= nc < 15:
             neighbor = board[nr][nc]
             if neighbor != ' ':
-                # Check if neighbor is an operator
-                # Handle compound tiles in neighbors - need to check all combinations
-                neighbor_value = None
+                # Check if neighbor is an operator or compound operator
+                neighbor_is_operator = False
+                neighbor_resolved_values = []
+                
                 if is_blank_tile(neighbor):
                     neighbor_value = get_blank_value(neighbor)
+                    if neighbor_value in ['+', '-', '×', '÷', '=']:
+                        neighbor_is_operator = True
+                        neighbor_resolved_values = [neighbor_value]
                 elif neighbor in ['+', '-', '×', '÷', '=']:
-                    neighbor_value = neighbor
+                    neighbor_is_operator = True
+                    neighbor_resolved_values = [neighbor]
                 elif neighbor in ['×/÷', '+/-']:
-                    # Compound tile neighbor - if it's a new tile, we need to check all combinations
-                    # But for now, just check if ANY combination would be invalid
-                    if (nr, nc) in new_tile_positions:
-                        # This is a new compound tile - both combinations must be checked
-                        # For now, reject if either combination creates adjacent operators
-                        if neighbor == '+/-':
-                            neighbor_options = ['+', '-']
-                        else:  # ×/÷
-                            neighbor_options = ['×', '÷']
-                        
-                        # Check if ANY combination creates adjacent operators
-                        all_invalid = True
-                        for neighbor_opt in neighbor_options:
-                            if neighbor_opt == '=' or neighbor_opt in ['+', '-', '×', '÷']:
-                                # If this is a minus making a negative number, it's OK (check validity later)
-                                if tile == '-' and _is_making_negative_number(board, row, col):
-                                    all_invalid = False
-                                    break
-                                # If neighbor is minus making a negative number, it's OK (check validity later)
-                                if neighbor_opt == '-' and _is_making_negative_number(board, nr, nc):
-                                    all_invalid = False
-                                    break
-                                # Special case: if this is a minus after another minus, and the neighbor minus
-                                # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
-                                if tile == '-' and neighbor_opt == '-':
-                                    # Check if neighbor minus is making a negative number
-                                    if _is_making_negative_number(board, nr, nc):
-                                        all_invalid = False
-                                        break
-                        
-                        if all_invalid:
-                            return "Operators cannot be placed directly next to each other"
-                        continue
-                    else:
-                        # Existing compound tile - skip for now (handled elsewhere)
-                        continue
+                    # Compound operator - check all possible resolved values
+                    neighbor_is_operator = True
+                    if neighbor == '+/-':
+                        neighbor_resolved_values = ['+', '-']
+                    else:  # ×/÷
+                        neighbor_resolved_values = ['×', '÷']
                 
-                if neighbor_value and neighbor_value in ['+', '-', '×', '÷', '=']:
-                    # NOTE: Operators cannot be adjacent EXCEPT:
-                    # - Minus can be after = or other operators if making a negative number
-                    # - Minus can be at start of expression for negative numbers
-                    # - Minus can be after another minus if the second minus is making a negative number
-                    if neighbor_value == '=' or neighbor_value in ['+', '-', '×', '÷']:
-                        # If this is a minus making a negative number, it's OK (check validity later)
-                        if tile == '-' and _is_making_negative_number(board, row, col):
-                            # Check if the negative number is valid (not 0, not 17-19)
-                            # This check happens later in the function, so just continue here
-                            continue
-                        # If neighbor is minus making a negative number, it's OK (check validity later)
-                        if neighbor_value == '-' and _is_making_negative_number(board, nr, nc):
-                            # Check if the negative number is valid (not 0, not 17-19)
-                            # This check happens later in the function, so just continue here
-                            continue
-                        # Special case: if this is a minus after another minus, and the neighbor minus
-                        # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
-                        if tile == '-' and neighbor_value == '-':
-                            # Check if neighbor minus is making a negative number
-                            if _is_making_negative_number(board, nr, nc):
-                                # This is OK - the second minus is a negative sign
-                                # Validity of the negative number will be checked later
-                                continue
-                        # Otherwise, operators are adjacent and invalid
+                if neighbor_is_operator:
+                    # NOTE: Operators cannot be adjacent, EXCEPT:
+                    # - A minus sign at the very start of an expression (before any number) is OK
+                    # - So -a+b is OK (negative sign at start, number a, then operator +)
+                    # - But a+-b, a/-b, a*-b are NOT OK (operator next to operator)
+                    # - Also, = can be adjacent to operators that make negative numbers (special case for equations)
+                    
+                    # Check if this tile is a minus at the start of an expression (not after an operator)
+                    this_is_negative_sign_at_start = (tile == '-' and _is_at_start_of_expression(board, row, col))
+                    
+                    # Check all possible resolved values of neighbor
+                    all_invalid = True
+                    for neighbor_opt in neighbor_resolved_values:
+                        # If neighbor is a minus at the start of an expression, it's OK
+                        neighbor_is_negative_sign_at_start = (neighbor_opt == '-' and _is_at_start_of_expression(board, nr, nc))
+                        
+                        # Special case: = can be adjacent to operators that make negative numbers
+                        # (e.g., 3 = -1 or 3 = (+/-)1)
+                        if tile == '=' or neighbor_opt == '=':
+                            # If the other operator is making a negative number, it's OK
+                            if tile == '=':
+                                other_is_negative = (neighbor_opt == '-' and _is_making_negative_number(board, nr, nc))
+                            else:
+                                other_is_negative = (tile == '-' and _is_making_negative_number(board, row, col))
+                            
+                            if other_is_negative:
+                                all_invalid = False
+                                break
+                        
+                        # If either this tile or neighbor is a negative sign at the start, it's OK
+                        if this_is_negative_sign_at_start or neighbor_is_negative_sign_at_start:
+                            all_invalid = False
+                            break
+                    
+                    # If all combinations result in operators adjacent to operators, it's invalid
+                    if all_invalid:
                         return "Operators cannot be placed directly next to each other"
     
     # NOTE: Plus sign cannot be placed in front of a number (at start of expression)
@@ -1141,60 +1127,6 @@ def validate_operator_placement_single_with_new_tiles(
                         has_zero_after = True
             if has_zero_after:
                 return "Minus sign cannot be placed in front of 0"
-            
-            # Check if making negative from 17, 18, or 19
-            # Need to extract the number after the minus sign
-            number_tiles = []
-            # Check right
-            if col < 14:
-                c = col + 1
-                while c < 15 and board[row][c] != ' ':
-                    tile_val = board[row][c]
-                    # Handle locked compound tiles
-                    resolved = _get_compound_resolved_value(tile_val)
-                    if resolved and resolved in NUMBER_TILES:
-                        number_tiles.append(resolved)
-                    elif is_blank_tile(tile_val):
-                        val = get_blank_value(tile_val)
-                        if val in NUMBER_TILES:
-                            number_tiles.append(val)
-                        else:
-                            break
-                    elif is_number_tile(tile_val):
-                        number_tiles.append(tile_val)
-                    else:
-                        break
-                    c += 1
-            # Check down if no horizontal number found
-            if not number_tiles and row < 14:
-                r = row + 1
-                while r < 15 and board[r][col] != ' ':
-                    tile_val = board[r][col]
-                    # Handle locked compound tiles
-                    resolved = _get_compound_resolved_value(tile_val)
-                    if resolved and resolved in NUMBER_TILES:
-                        number_tiles.append(resolved)
-                    elif is_blank_tile(tile_val):
-                        val = get_blank_value(tile_val)
-                        if val in NUMBER_TILES:
-                            number_tiles.append(val)
-                        else:
-                            break
-                    elif is_number_tile(tile_val):
-                        number_tiles.append(tile_val)
-                    else:
-                        break
-                    r += 1
-            
-            # Form the number from tiles
-            if number_tiles:
-                number_str = ''.join(number_tiles)
-                try:
-                    number_value = int(number_str)
-                    if number_value in [17, 18, 19]:
-                        return f"Negative numbers cannot be made from {number_value}. Only 1-16, 20, or valid compound numbers but not 17, 18, or 19"
-                except ValueError:
-                    pass  # Invalid number format, will be caught elsewhere
     
     return None
 
@@ -1220,54 +1152,72 @@ def validate_operator_placement_single(
         return None  # Not an operator
     
     # NOTE: Check for adjacent operators
-    # NOTE: Minus can be adjacent to = or other operators if it's making a negative number
+    # NOTE: Operators cannot be adjacent to each other, EXCEPT:
+    # - A minus sign at the start of an expression (before any number) is allowed
+    # - So -a+b is OK (negative sign - at start, followed by number a, then operator +)
+    # - But a+-b, a/-b, a*-b are NOT OK (operator next to operator)
+    # - And compound operators cannot be adjacent to other operators either
     neighbors = [(row-1, col), (row+1, col), (row, col-1), (row, col+1)]
     for nr, nc in neighbors:
         if 0 <= nr < 15 and 0 <= nc < 15:
             neighbor = board[nr][nc]
             if neighbor != ' ':
-                # Check if neighbor is an operator
+                # Check if neighbor is an operator or compound operator
+                neighbor_is_operator = False
+                neighbor_resolved_values = []
+                
                 if is_blank_tile(neighbor):
                     neighbor_value = get_blank_value(neighbor)
                     if neighbor_value in ['+', '-', '×', '÷', '=']:
-                        # NOTE: Operators cannot be adjacent EXCEPT:
-                        # - Minus can be after = or other operators if making a negative number
-                        # - Minus can be at start of expression for negative numbers
-                        if neighbor_value == '=' or neighbor_value in ['+', '-', '×', '÷']:
-                            # If this is a minus making a negative number, it's OK (check validity later)
-                            if tile == '-' and _is_making_negative_number(board, row, col):
-                                continue
-                            # If neighbor is minus making a negative number, it's OK (check validity later)
-                            if neighbor_value == '-' and _is_making_negative_number(board, nr, nc):
-                                continue
-                            # Special case: if this is a minus after another minus, and the neighbor minus
-                            # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
-                            if tile == '-' and neighbor_value == '-':
-                                # Check if neighbor minus is making a negative number
-                                if _is_making_negative_number(board, nr, nc):
-                                    # This is OK - the second minus is a negative sign
-                                    # Validity of the negative number will be checked later
-                                    continue
-                            # Otherwise, operators are adjacent and invalid
-                            return "Operators cannot be placed directly next to each other"
+                        neighbor_is_operator = True
+                        neighbor_resolved_values = [neighbor_value]
                 elif neighbor in ['+', '-', '×', '÷', '=']:
-                    # Same logic for non-blank operators
-                    if neighbor == '=' or neighbor in ['+', '-', '×', '÷']:
-                        # If this is a minus making a negative number, it's OK (check validity later)
-                        if tile == '-' and _is_making_negative_number(board, row, col):
-                            continue
-                        # If neighbor is minus making a negative number, it's OK (check validity later)
-                        if neighbor == '-' and _is_making_negative_number(board, nr, nc):
-                            continue
-                        # Special case: if this is a minus after another minus, and the neighbor minus
-                        # is making a negative number, that's OK (e.g., "1 - -1" where first - is operator, second - is sign)
-                        if tile == '-' and neighbor == '-':
-                            # Check if neighbor minus is making a negative number
-                            if _is_making_negative_number(board, nr, nc):
-                                # This is OK - the second minus is a negative sign
-                                # Validity of the negative number will be checked later
-                                continue
-                        # Otherwise, operators are adjacent and invalid
+                    neighbor_is_operator = True
+                    neighbor_resolved_values = [neighbor]
+                elif neighbor in ['×/÷', '+/-']:
+                    # Compound operator - check all possible resolved values
+                    neighbor_is_operator = True
+                    if neighbor == '+/-':
+                        neighbor_resolved_values = ['+', '-']
+                    else:  # ×/÷
+                        neighbor_resolved_values = ['×', '÷']
+                
+                if neighbor_is_operator:
+                    # NOTE: Operators cannot be adjacent, EXCEPT:
+                    # - A minus sign at the very start of an expression (before any number) is OK
+                    # - So -a+b is OK (negative sign at start, number a, then operator +)
+                    # - But a+-b, a/-b, a*-b are NOT OK (operator next to operator)
+                    # - Also, = can be adjacent to operators that make negative numbers (special case for equations)
+                    
+                    # Check if this tile is a minus at the start of an expression (not after an operator)
+                    this_is_negative_sign_at_start = (tile == '-' and _is_at_start_of_expression(board, row, col))
+                    
+                    # Check all possible resolved values of neighbor
+                    all_invalid = True
+                    for neighbor_opt in neighbor_resolved_values:
+                        # If neighbor is a minus at the start of an expression, it's OK
+                        neighbor_is_negative_sign_at_start = (neighbor_opt == '-' and _is_at_start_of_expression(board, nr, nc))
+                        
+                        # Special case: = can be adjacent to operators that make negative numbers
+                        # (e.g., 3 = -1 or 3 = (+/-)1)
+                        if tile == '=' or neighbor_opt == '=':
+                            # If the other operator is making a negative number, it's OK
+                            if tile == '=':
+                                other_is_negative = (neighbor_opt == '-' and _is_making_negative_number(board, nr, nc))
+                            else:
+                                other_is_negative = (tile == '-' and _is_making_negative_number(board, row, col))
+                            
+                            if other_is_negative:
+                                all_invalid = False
+                                break
+                        
+                        # If either this tile or neighbor is a negative sign at the start, it's OK
+                        if this_is_negative_sign_at_start or neighbor_is_negative_sign_at_start:
+                            all_invalid = False
+                            break
+                    
+                    # If all combinations result in operators adjacent to operators, it's invalid
+                    if all_invalid:
                         return "Operators cannot be placed directly next to each other"
     
     # NOTE: Plus sign cannot be placed in front of a number
@@ -1454,7 +1404,7 @@ def _has_valid_number_after(board: List[List[str]], row: int, col: int, chars: D
             if right == '0' or (is_blank_tile(right) and get_blank_value(right) == '0'):
                 return False
             if is_number_tile(right):
-                # Check if it's a valid number (1-16, 20, or part of formed number, but NOT 17, 18, 19)
+                # Check if it's a valid number (1-20 or part of formed number)
                 return _is_valid_negative_number(board, row, col+1, True, chars)
             elif is_blank_tile(right):
                 val = get_blank_value(right)
@@ -1491,7 +1441,7 @@ def _is_valid_negative_number(
 ) -> bool:
     """
     Check if a number can be made negative.
-    NOTE: Minus can be placed before numbers 1-16, 20, or formed numbers.
+    NOTE: Minus can be placed before numbers 1-20 or valid compound numbers.
     """
     # Extract the full number
     if is_horizontal:
@@ -1546,11 +1496,11 @@ def _is_valid_negative_number(
     if not number_str:
         return False
     
-    # Check if it's a single digit 1-16, 20, or a formed number
+    # Check if it's a number 1-20 or a formed number
     try:
         num = int(number_str)
-        # Single digit 1-9, or 10-16, or 20
-        if 1 <= num <= 16 or num == 20:
+        # Numbers 1-20 are valid
+        if 1 <= num <= 20:
             return True
         # Formed numbers (2-3 digits) are also valid
         if 2 <= len(number_str) <= 3:
