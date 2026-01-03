@@ -190,10 +190,12 @@ class AMathGame:
         Use "?value" to indicate blank tiles (e.g., "?0", "?5", "?+")
         Returns True if successful, False if there were errors
         """
-        # Save current state for rollback if needed
+        # NOTE: If we're not at the latest state, we're making a new commit from a previous state
+        # This should truncate all future states (like git history)
         if self.current_state_index < len(self.history) - 1:
-            # Not at latest state, restore to latest first
-            self._restore_state(len(self.history) - 1)
+            # Truncate all states after the current one
+            self.history = self.history[:self.current_state_index + 1]
+            # We're already at the state we want, no need to restore
         
         # Save board state before making changes
         original_board = [row[:] for row in self.board]
@@ -530,26 +532,7 @@ class AMathGame:
                 
                 self._remove_tiles_from_bag(placed_tiles)
                 
-                # NOTE: Calculate kept tiles (tiles from original rack that were NOT played)
-                # We need to match placed tiles against the original rack, accounting for duplicates
-                placed_base_tiles = placed_tiles.copy()  # Make a copy to modify
-                kept_tiles = []
-                
-                # For each tile in the original rack, check if it was placed
-                for tile in original_rack:
-                    if tile in placed_base_tiles:
-                        # This tile was placed - remove one occurrence
-                        placed_base_tiles.remove(tile)
-                    else:
-                        # This tile was kept (not placed)
-                        kept_tiles.append(tile)
-                
-                # NOTE: Remove kept tiles from bag so opponent can't draw them
-                # These tiles are still on the current player's rack, so they shouldn't be available
-                # We need to remove them from the bag before drawing the opponent's rack
-                self._remove_tiles_from_bag(kept_tiles)
-                
-                # NOTE: Draw new rack for next player (from remaining bag, excluding kept tiles)
+                # NOTE: Draw new rack for next player (from bag, without considering kept tiles)
                 # Special case: If bag has < 16 tiles (8 + 8) and a play would leave < 8 tiles,
                 # we stop drawing. Check if bag will have < 8 tiles after this play.
                 tiles_remaining_after_play = len(self.bag)
@@ -577,6 +560,12 @@ class AMathGame:
         tiles_str: Comma-separated string of tile identifiers to exchange (e.g., "12,?,*/,*,=,/")
         Returns True if successful, False if there were errors
         """
+        # NOTE: If we're not at the latest state, we're making a new commit from a previous state
+        # This should truncate all future states (like git history)
+        if self.current_state_index < len(self.history) - 1:
+            # Truncate all states after the current one
+            self.history = self.history[:self.current_state_index + 1]
+        
         # Parse comma-separated tiles
         identifiers = [id_str.strip() for id_str in tiles_str.split(',')]
         
@@ -611,9 +600,6 @@ class AMathGame:
             self.bag.append(tile)
         random.shuffle(self.bag)  # Shuffle after adding tiles back
         
-        # Remove kept tiles from bag so opponent can't draw them
-        self._remove_tiles_from_bag(kept_tiles)
-        
         # Draw new tiles for the current player (same number as exchanged)
         num_to_exchange = len(exchange_tiles)
         if len(self.bag) >= num_to_exchange:
@@ -639,8 +625,11 @@ class AMathGame:
         Pass the turn (all 8 tiles are kept).
         Returns True if successful, False if there were errors
         """
-        # All tiles are kept - remove them from bag so opponent can't draw them
-        self._remove_tiles_from_bag(original_rack)
+        # NOTE: If we're not at the latest state, we're making a new commit from a previous state
+        # This should truncate all future states (like git history)
+        if self.current_state_index < len(self.history) - 1:
+            # Truncate all states after the current one
+            self.history = self.history[:self.current_state_index + 1]
         
         # Rack stays the same (all tiles kept)
         self.rack = original_rack
@@ -680,6 +669,9 @@ class AMathGame:
             # Not at latest state, restore to latest first
             self._restore_state(len(self.history) - 1)
         
+        # Save old rack before changing
+        old_rack = self.rack.copy()
+        
         new_rack = []
         identifiers = [id_str.strip() for id_str in tiles_str.split(',')]
         
@@ -701,8 +693,12 @@ class AMathGame:
             print(f"Error: Could not create rack with 8 tiles. Only found {len(new_rack)} valid tiles.")
             return False
         
+        # NOTE: Put old rack tiles back in the bag
+        for tile in old_rack:
+            self.bag.append(tile)
+        random.shuffle(self.bag)  # Shuffle after adding tiles back
+        
         # NOTE: Remove new rack tiles from bag (set subtraction)
-        # The old rack tiles are already in the bag, so we only need to remove the new ones
         self._remove_tiles_from_bag(new_rack)
         
         self.rack = new_rack
@@ -720,17 +716,30 @@ class AMathGame:
             # Not at latest state, restore to latest first
             self._restore_state(len(self.history) - 1)
         
+        # Save old rack before changing
+        old_rack = self.rack.copy()
+        
         # Ensure bag is initialized
         if not self.bag:
             self._initialize_bag()
+        
+        # NOTE: Put old rack tiles back in the bag
+        for tile in old_rack:
+            self.bag.append(tile)
+        random.shuffle(self.bag)  # Shuffle after adding tiles back
         
         # Check if there are enough tiles in the bag
         if len(self.bag) < 8:
             print(f"Error: Not enough tiles in bag. Bag has {len(self.bag)} tiles, need 8.")
             return False
         
-        # Randomly sample 8 tiles from the bag without removing them
-        self.rack = random.sample(self.bag, 8)
+        # Randomly sample 8 tiles from the bag and remove them
+        new_rack = random.sample(self.bag, 8)
+        # Remove the sampled tiles from the bag
+        for tile in new_rack:
+            self.bag.remove(tile)
+        
+        self.rack = new_rack
         
         # Save state
         self._save_state()
@@ -755,6 +764,8 @@ class AMathGame:
         if self.current_state_index < len(self.history) - 1:
             self._restore_state(self.current_state_index + 1)
             return True
+        else:
+            print("Already at latest state")
         return False
     
     def previous_play(self):
