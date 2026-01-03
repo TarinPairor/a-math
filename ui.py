@@ -120,7 +120,7 @@ def display_info(chars: dict, bag: list, rack: list, turn: int, bag_unseen_count
     print(f"\n   Rack ({len(rack)}): {rack_display}")
     
     # Show turn
-    player = "me" if turn % 2 == 0 else "others"
+    player = player_names[turn % 2] if player_names and len(player_names) > 1 else f"Player {turn % 2 + 1}"
     print(f"\n   Turn {turn}: ({player})")
 
 

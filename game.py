@@ -24,6 +24,7 @@ class AMathGame:
         self.current_state_index = -1
         self.scores = [0, 0]  # Scores for player 0 and player 1
         self.player_names = ["euclid", "pythagoras"]  # Default player names
+        self.commit_log = []  # List of commit messages for log command
         
         # Initialize bag from chars.json
         self._initialize_bag()
@@ -91,7 +92,8 @@ class AMathGame:
             'bag': self.bag.copy(),
             'rack': self.rack.copy(),
             'turn': self.turn,
-            'scores': self.scores.copy()
+            'scores': self.scores.copy(),
+            'commit_log': self.commit_log.copy()
         }
         # Remove future states if we're not at the end
         if self.current_state_index < len(self.history) - 1:
@@ -108,6 +110,7 @@ class AMathGame:
             self.rack = state['rack'].copy()
             self.turn = state['turn']
             self.scores = state.get('scores', [0, 0]).copy()
+            self.commit_log = state.get('commit_log', []).copy()
             self.current_state_index = index
     
     def new_game(self):
@@ -119,6 +122,7 @@ class AMathGame:
         self.history = []
         self.current_state_index = -1
         self.scores = [0, 0]  # Reset scores
+        self.commit_log = []  # Reset commit log
         # NOTE: After drawing rack, bag now has 100 - 8 = 92 tiles
         self._save_state()
     
@@ -590,7 +594,9 @@ class AMathGame:
                         self.rack = []
         
         # Success - advance turn and save state
-        # NOTE: Exchange scores 0 points
+        # Add to commit log
+        commit_message = f"commit {coord} {tiles_str}"
+        self.commit_log.append(commit_message)
         self.turn += 1
         self._save_state()
         return True
@@ -657,6 +663,9 @@ class AMathGame:
                 self.rack = kept_tiles
         
         # Success - advance turn and save state
+        # Add to commit log
+        commit_message = f"commit exchange {tiles_str}"
+        self.commit_log.append(commit_message)
         self.turn += 1
         self._save_state()
         return True
@@ -677,6 +686,8 @@ class AMathGame:
         
         # Success - advance turn and save state
         # NOTE: Pass scores 0 points
+        # Add to commit log
+        self.commit_log.append("commit pass")
         self.turn += 1
         self._save_state()
         return True
@@ -800,6 +811,15 @@ class AMathGame:
         """Show current game state with correct bag+unseen count"""
         bag_unseen_count = self._get_bag_unseen_count()
         ui_show_state(self.chars, self.board, self.bag, self.rack, self.turn, bag_unseen_count, self.scores, self.player_names)
+    
+    def show_log(self):
+        """Display all commit messages up to the current point"""
+        print("LOG")
+        if not self.commit_log:
+            print("(no commits yet)")
+        else:
+            for commit_msg in self.commit_log:
+                print(commit_msg)
     
     def next_play(self):
         """Go to next play in history"""

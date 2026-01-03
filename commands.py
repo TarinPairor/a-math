@@ -138,6 +138,8 @@ def process_command(game: AMathGame, command: str) -> bool:
             print("Invalid turn number")
     elif cmd == 's':
         game.show_state()
+    elif cmd == 'log':
+        game.show_log()
     elif cmd == 'get':
         if len(parts) < 2:
             print("Usage: get <coord>")
