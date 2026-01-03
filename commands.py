@@ -101,13 +101,17 @@ def process_command(game: AMathGame, command: str) -> bool:
         game.new_game()
         game.show_state()
     elif cmd == 'commit':
-        if len(parts) < 3:
+        if len(parts) < 2:
             print("Usage: commit <coord> <tiles>")
+            print("       commit exch <tiles> or commit exchange <tiles>")
+            print("       commit pass")
             print("Example: commit 8G 1,+,12,+/-,3,=,.,.")
+            print("         commit exch 12,?,*/,*,=,/")
+            print("         commit pass")
             return True
         coord = parts[1]
         # Join all parts after coord to handle comma-separated tiles
-        tiles_str = ' '.join(parts[2:])
+        tiles_str = ' '.join(parts[2:]) if len(parts) > 2 else ''
         if game.commit(coord, tiles_str):
             game.show_state()
     elif cmd == 'n':

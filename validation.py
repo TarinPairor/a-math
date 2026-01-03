@@ -1444,5 +1444,3 @@ def _is_valid_negative_number(
         pass
     
     return False
-
-r

@@ -181,9 +181,11 @@ class AMathGame:
     
     def commit(self, coord: str, tiles_str: str) -> bool:
         """
-        Place tiles on the board.
-        coord: coordinate string (e.g., "8G" or "G8")
+        Place tiles on the board, exchange tiles, or pass turn.
+        coord: coordinate string (e.g., "8G" or "G8"), or "exch"/"exchange" for exchange, or "pass" for pass
         tiles_str: Comma-separated string of tile identifiers (e.g., "1,+,12,+/-,3,=,.,.")
+                   For exchange: tiles to exchange (e.g., "12,?,*/,*,=,/")
+                   For pass: ignored
         Use "." to indicate existing tiles (skip position)
         Use "?value" to indicate blank tiles (e.g., "?0", "?5", "?+")
         Returns True if successful, False if there were errors
@@ -198,6 +200,14 @@ class AMathGame:
         original_turn = self.turn
         original_rack = self.rack.copy()  # Save original rack to track kept tiles
         
+        # Handle special commit types: exchange and pass
+        coord_lower = coord.lower().strip()
+        if coord_lower in ['exch', 'exchange']:
+            return self._commit_exchange(tiles_str, original_rack)
+        elif coord_lower == 'pass':
+            return self._commit_pass(original_rack)
+        
+        # Normal commit - parse coordinate
         try:
             row, col, is_horizontal = self._parse_coord(coord)
         except ValueError as e:
@@ -555,6 +565,85 @@ class AMathGame:
                     else:
                         # Bag is empty
                         self.rack = []
+        
+        # Success - advance turn and save state
+        self.turn += 1
+        self._save_state()
+        return True
+    
+    def _commit_exchange(self, tiles_str: str, original_rack: List[str]) -> bool:
+        """
+        Exchange tiles from the rack.
+        tiles_str: Comma-separated string of tile identifiers to exchange (e.g., "12,?,*/,*,=,/")
+        Returns True if successful, False if there were errors
+        """
+        # Parse comma-separated tiles
+        identifiers = [id_str.strip() for id_str in tiles_str.split(',')]
+        
+        if not identifiers:
+            print("Error: No tiles specified for exchange")
+            return False
+        
+        # Resolve all identifiers to tile keys
+        exchange_tiles = []
+        for identifier in identifiers:
+            tile = self._resolve_tile(identifier)
+            if tile:
+                exchange_tiles.append(tile)
+            else:
+                print(f"Error: Could not resolve tile identifier '{identifier}'")
+                return False
+        
+        # Validate that all exchange tiles are on the current rack
+        rack_copy = original_rack.copy()
+        for tile in exchange_tiles:
+            if tile in rack_copy:
+                rack_copy.remove(tile)
+            else:
+                print(f"Error: Tile '{tile}' is not on the current rack. Rack: {original_rack}")
+                return False
+        
+        # Calculate kept tiles (tiles NOT being exchanged)
+        kept_tiles = rack_copy  # Remaining tiles after removing exchange tiles
+        
+        # Put exchange tiles back in the bag
+        for tile in exchange_tiles:
+            self.bag.append(tile)
+        random.shuffle(self.bag)  # Shuffle after adding tiles back
+        
+        # Remove kept tiles from bag so opponent can't draw them
+        self._remove_tiles_from_bag(kept_tiles)
+        
+        # Draw new tiles for the current player (same number as exchanged)
+        num_to_exchange = len(exchange_tiles)
+        if len(self.bag) >= num_to_exchange:
+            new_tiles = self._draw_tiles(num_to_exchange)
+            # Update rack: kept tiles + new tiles
+            self.rack = kept_tiles + new_tiles
+        else:
+            # Not enough tiles in bag - draw what's available
+            if len(self.bag) > 0:
+                new_tiles = self._draw_tiles(len(self.bag))
+                self.rack = kept_tiles + new_tiles
+            else:
+                # Bag is empty - just keep the kept tiles
+                self.rack = kept_tiles
+        
+        # Success - advance turn and save state
+        self.turn += 1
+        self._save_state()
+        return True
+    
+    def _commit_pass(self, original_rack: List[str]) -> bool:
+        """
+        Pass the turn (all 8 tiles are kept).
+        Returns True if successful, False if there were errors
+        """
+        # All tiles are kept - remove them from bag so opponent can't draw them
+        self._remove_tiles_from_bag(original_rack)
+        
+        # Rack stays the same (all tiles kept)
+        self.rack = original_rack
         
         # Success - advance turn and save state
         self.turn += 1
