@@ -48,6 +48,15 @@ def get_blank_value(tile: str) -> str:
     return None
 
 
+def _has_tiles_on_board(board: List[List[str]]) -> bool:
+    """Check if there are any tiles on the board"""
+    for row in board:
+        for tile in row:
+            if tile != ' ':
+                return True
+    return False
+
+
 def validate_play(
     board: List[List[str]],
     new_tiles: List[Tuple[int, int, str]],  # (row, col, tile)
@@ -70,15 +79,19 @@ def validate_play(
     """
     parsed_equations = []  # For debugging: list of (direction, sequence) tuples
     
-    # NOTE: Starting player (turn 0) must cover center square
-    if turn == 0:
+    # NOTE: Check if this is the first move by checking if board has any tiles
+    # (not by turn number, since exchange/pass don't place tiles)
+    is_first_move = not _has_tiles_on_board(board)
+    
+    # NOTE: Starting player (first move) must cover center square
+    if is_first_move:
         covers_center = any((r, c) == CENTER_SQUARE for r, c, _ in new_tiles)
         if not covers_center:
             return False, "First play must cover the center square (H8)", None
     
     # NOTE: Subsequent plays must touch at least one existing tile
     # NOTE: New tiles must not overlap with existing tiles
-    if turn > 0:
+    if not is_first_move:
         # Check that new tiles don't overlap with existing tiles
         for r, c, _ in new_tiles:
             if board[r][c] != ' ':

@@ -681,7 +681,8 @@ class AMathGame:
             # Truncate all states after the current one
             self.history = self.history[:self.current_state_index + 1]
         
-        # Rack stays the same (all tiles kept)
+        # Rack stays the same (all tiles kept) for current player
+        # But after incrementing turn, draw new rack for next player
         self.rack = original_rack
         
         # Success - advance turn and save state
@@ -689,6 +690,21 @@ class AMathGame:
         # Add to commit log
         self.commit_log.append("commit pass")
         self.turn += 1
+        
+        # Draw new rack for next player (from bag)
+        tiles_remaining = len(self.bag)
+        if tiles_remaining >= 8:
+            new_rack = self._draw_tiles(8)
+            self.rack = new_rack
+        else:
+            # Not enough tiles - draw what's available (or nothing)
+            if tiles_remaining > 0:
+                new_rack = self._draw_tiles(tiles_remaining)
+                self.rack = new_rack
+            else:
+                # Bag is empty
+                self.rack = []
+        
         self._save_state()
         return True
     
