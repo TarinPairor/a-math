@@ -44,17 +44,12 @@ def get_tile_value(tile: str, chars: Dict) -> int:
     Returns:
         Base value of the tile (0 if not found)
     
-    NOTE: The tile "0" has value 0 for scoring purposes, even though chars.json may say value 1.
     NOTE: Compound tiles use their base value, not the resolved value.
     NOTE: Blank tiles always have value 0.
     """
     # Handle blank tiles (format: "?value")
     if tile.startswith('?'):
         # Blank tiles have value 0, regardless of what value they represent
-        return 0
-    
-    # Special case: tile "0" always has value 0 for scoring
-    if tile == "0":
         return 0
     
     # Handle locked compound tiles (format: "symbol:resolved_value")
@@ -71,9 +66,6 @@ def get_tile_value(tile: str, chars: Dict) -> int:
     # Regular tile (including compound tiles like +/- and ×/÷)
     if tile in chars:
         value = chars[tile].get('value', 0)
-        # Special case: tile "0" should be 0 even if chars.json says otherwise
-        if tile == "0":
-            return 0
         return value
     
     return 0

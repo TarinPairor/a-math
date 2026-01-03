@@ -8,6 +8,7 @@ from copy import deepcopy
 from tiles import resolve_tile, get_tile_by_index, get_tile_display
 from ui import display_board, display_info, show_state as ui_show_state
 from validation import validate_play, BLANK_VALUES, NUMBER_TILES, is_blank_tile, get_blank_value
+from scoring import calculate_play_score, load_bonus_squares
 
 
 class AMathGame:
@@ -21,9 +22,14 @@ class AMathGame:
         self.turn = 0
         self.history = []  # List of game states for navigation
         self.current_state_index = -1
+        self.scores = [0, 0]  # Scores for player 0 and player 1
+        self.player_names = ["euclid", "pythagoras"]  # Default player names
         
         # Initialize bag from chars.json
         self._initialize_bag()
+        
+        # Load bonus squares
+        self.bonus = load_bonus_squares("bonus.json")
     
     def _initialize_bag(self):
         """Initialize the bag with all tiles from chars.json"""
@@ -84,7 +90,8 @@ class AMathGame:
             'board': deepcopy(self.board),
             'bag': self.bag.copy(),
             'rack': self.rack.copy(),
-            'turn': self.turn
+            'turn': self.turn,
+            'scores': self.scores.copy()
         }
         # Remove future states if we're not at the end
         if self.current_state_index < len(self.history) - 1:
@@ -100,6 +107,7 @@ class AMathGame:
             self.bag = state['bag'].copy()
             self.rack = state['rack'].copy()
             self.turn = state['turn']
+            self.scores = state.get('scores', [0, 0]).copy()
             self.current_state_index = index
     
     def new_game(self):
@@ -110,6 +118,7 @@ class AMathGame:
         self.turn = 0
         self.history = []
         self.current_state_index = -1
+        self.scores = [0, 0]  # Reset scores
         # NOTE: After drawing rack, bag now has 100 - 8 = 92 tiles
         self._save_state()
     
@@ -516,6 +525,37 @@ class AMathGame:
                                     # Store as "symbol:resolved" format
                                     self.board[r][c] = f"{board_tile}:{resolved_tile}"
                 
+                # NOTE: Calculate score for this play
+                # Score is the sum of all equations formed (horizontal and vertical)
+                play_score = 0
+                if parsed_equations:
+                    new_positions = {(r, c) for r, c, _ in new_tiles}
+                    for direction, sequence in parsed_equations:
+                        # Only score equations (sequences with equals signs)
+                        has_equals = any(
+                            tile == '=' or (is_blank_tile(tile) and get_blank_value(tile) == '=')
+                            for _, _, tile in sequence
+                        )
+                        if has_equals and len(sequence) > 1:
+                            # Extract tiles from board (use actual board tiles, not resolved values for scoring)
+                            equation_tiles = []
+                            for r, c, _ in sequence:
+                                # Get the actual tile from the board
+                                board_tile = self.board[r][c]
+                                equation_tiles.append((r, c, board_tile))
+                            
+                            # Calculate score for this equation
+                            try:
+                                eq_score = calculate_play_score(new_tiles, equation_tiles, self.chars, self.bonus)
+                                play_score += eq_score
+                            except Exception as e:
+                                # If scoring fails, just continue (shouldn't happen for valid plays)
+                                pass
+                
+                # Add score to current player (turn % 2 gives player index)
+                player_index = (self.turn) % 2
+                self.scores[player_index] += play_score
+                
                 # NOTE: Remove placed tiles from bag
                 # Extract base tiles from new_tiles (handle compound/blank tiles)
                 placed_tiles = []
@@ -550,6 +590,7 @@ class AMathGame:
                         self.rack = []
         
         # Success - advance turn and save state
+        # NOTE: Exchange scores 0 points
         self.turn += 1
         self._save_state()
         return True
@@ -635,6 +676,7 @@ class AMathGame:
         self.rack = original_rack
         
         # Success - advance turn and save state
+        # NOTE: Pass scores 0 points
         self.turn += 1
         self._save_state()
         return True
@@ -757,7 +799,7 @@ class AMathGame:
     def show_state(self):
         """Show current game state with correct bag+unseen count"""
         bag_unseen_count = self._get_bag_unseen_count()
-        ui_show_state(self.chars, self.board, self.bag, self.rack, self.turn, bag_unseen_count)
+        ui_show_state(self.chars, self.board, self.bag, self.rack, self.turn, bag_unseen_count, self.scores, self.player_names)
     
     def next_play(self):
         """Go to next play in history"""

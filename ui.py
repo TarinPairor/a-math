@@ -57,7 +57,7 @@ def display_board(chars: dict, board: list):
     print("   " + "-" * (3 * 15 + 14))
 
 
-def display_info(chars: dict, bag: list, rack: list, turn: int, bag_unseen_count: int = None):
+def display_info(chars: dict, bag: list, rack: list, turn: int, bag_unseen_count: int = None, scores: list = None, player_names: list = None):
     """
     Display game information.
     
@@ -67,7 +67,23 @@ def display_info(chars: dict, bag: list, rack: list, turn: int, bag_unseen_count
         rack: Current player's rack
         turn: Current turn number
         bag_unseen_count: Optional pre-calculated bag+unseen count
+        scores: List of scores [player0_score, player1_score]
+        player_names: List of player names [player0_name, player1_name]
     """
+    # Display player scores (before bag+unseen)
+    if scores is not None and player_names is not None:
+        # Format: player_name score (right-aligned, similar to example)
+        # Example: "euclid          57"
+        #          "pythagoras      48"
+        # We'll use a fixed width format to align scores
+        max_name_len = max(len(name) for name in player_names) if player_names else 10
+        for i, (name, score) in enumerate(zip(player_names, scores)):
+            # Format: name (left-aligned) + spacing + score (right-aligned)
+            # Use enough spacing to align scores nicely
+            name_display = name.ljust(max_name_len + 2)
+            score_display = str(score).rjust(4)
+            print(f"{name_display} {score_display}")
+    
     # Calculate bag+unseen if not provided
     if bag_unseen_count is None:
         total_tiles = sum(char_data['count'] for char_data in chars.values())
@@ -108,8 +124,8 @@ def display_info(chars: dict, bag: list, rack: list, turn: int, bag_unseen_count
     print(f"\n   Turn {turn}: ({player})")
 
 
-def show_state(chars: dict, board: list, bag: list, rack: list, turn: int, bag_unseen_count: int = None):
+def show_state(chars: dict, board: list, bag: list, rack: list, turn: int, bag_unseen_count: int = None, scores: list = None, player_names: list = None):
     """Show current game state"""
     display_board(chars, board)
-    display_info(chars, bag, rack, turn, bag_unseen_count)
+    display_info(chars, bag, rack, turn, bag_unseen_count, scores, player_names)
 
