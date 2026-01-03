@@ -57,12 +57,25 @@ def display_board(chars: dict, board: list):
     print("   " + "-" * (3 * 15 + 14))
 
 
-def display_info(chars: dict, bag: list, rack: list, turn: int):
-    """Display game information"""
-    bag_count = len(bag)
-    unseen_total = bag_count  # Simplified for now
+def display_info(chars: dict, bag: list, rack: list, turn: int, bag_unseen_count: int = None):
+    """
+    Display game information.
     
-    print(f"Bag + unseen: ({unseen_total})")
+    Args:
+        chars: Character definitions
+        bag: Current bag (physical tiles remaining)
+        rack: Current player's rack
+        turn: Current turn number
+        bag_unseen_count: Optional pre-calculated bag+unseen count
+    """
+    # Calculate bag+unseen if not provided
+    if bag_unseen_count is None:
+        total_tiles = sum(char_data['count'] for char_data in chars.values())
+        # Count tiles on board (we need to get this from the game, but for now use bag count)
+        # Actually, we'll calculate it: total - bag - rack
+        bag_unseen_count = total_tiles - len(bag) - len(rack)
+    
+    print(f"Bag + unseen: ({bag_unseen_count})")
     
     # Show bag contents (all tiles, formatted and sorted)
     # Sort by tile key for consistent display
@@ -95,8 +108,8 @@ def display_info(chars: dict, bag: list, rack: list, turn: int):
     print(f"\n   Turn {turn}: ({player})")
 
 
-def show_state(chars: dict, board: list, bag: list, rack: list, turn: int):
+def show_state(chars: dict, board: list, bag: list, rack: list, turn: int, bag_unseen_count: int = None):
     """Show current game state"""
     display_board(chars, board)
-    display_info(chars, bag, rack, turn)
+    display_info(chars, bag, rack, turn, bag_unseen_count)
 

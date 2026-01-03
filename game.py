@@ -41,6 +41,43 @@ class AMathGame:
             drawn.append(self.bag.pop())
         return drawn
     
+    def _get_tiles_on_board(self) -> List[str]:
+        """Get all tiles currently on the board (base tiles only, not resolved values)"""
+        tiles = []
+        for row in self.board:
+            for tile in row:
+                if tile != ' ':
+                    # Extract base tile from compound/blank tiles
+                    if tile.startswith('?'):
+                        # Blank tile - count as the blank tile itself
+                        tiles.append('?')
+                    elif ':' in tile and tile.split(':', 1)[0] in ['×/÷', '+/-']:
+                        # Compound tile - count as the compound tile itself
+                        compound_tile = tile.split(':', 1)[0]
+                        tiles.append(compound_tile)
+                    else:
+                        tiles.append(tile)
+        return tiles
+    
+    def _remove_tiles_from_bag(self, tiles_to_remove: List[str]):
+        """
+        Remove specific tiles from the bag (set subtraction).
+        Removes all occurrences of each tile in the list.
+        """
+        for tile in tiles_to_remove:
+            if tile in self.bag:
+                self.bag.remove(tile)
+    
+    def _get_bag_unseen_count(self) -> int:
+        """
+        Calculate bag+unseen tiles count.
+        Bag+unseen = Total tiles (100) - tiles on board - tiles on current rack
+        """
+        total_tiles = sum(char_data['count'] for char_data in self.chars.values())
+        tiles_on_board = len(self._get_tiles_on_board())
+        tiles_on_rack = len(self.rack)
+        return total_tiles - tiles_on_board - tiles_on_rack
+    
     def _save_state(self):
         """Save current game state to history"""
         state = {
@@ -73,6 +110,7 @@ class AMathGame:
         self.turn = 0
         self.history = []
         self.current_state_index = -1
+        # NOTE: After drawing rack, bag now has 100 - 8 = 92 tiles
         self._save_state()
     
     def _parse_coord(self, coord: str) -> Tuple[int, int, bool]:
@@ -158,6 +196,7 @@ class AMathGame:
         # Save board state before making changes
         original_board = [row[:] for row in self.board]
         original_turn = self.turn
+        original_rack = self.rack.copy()  # Save original rack to track kept tiles
         
         try:
             row, col, is_horizontal = self._parse_coord(coord)
@@ -464,6 +503,58 @@ class AMathGame:
                                     # This is a new compound tile - lock in the resolved value
                                     # Store as "symbol:resolved" format
                                     self.board[r][c] = f"{board_tile}:{resolved_tile}"
+                
+                # NOTE: Remove placed tiles from bag
+                # Extract base tiles from new_tiles (handle compound/blank tiles)
+                placed_tiles = []
+                for r, c, tile in new_tiles:
+                    if tile.startswith('?'):
+                        # Blank tile
+                        placed_tiles.append('?')
+                    elif ':' in tile and tile.split(':', 1)[0] in ['×/÷', '+/-']:
+                        # Compound tile - use the base compound tile
+                        compound_tile = tile.split(':', 1)[0]
+                        placed_tiles.append(compound_tile)
+                    else:
+                        placed_tiles.append(tile)
+                
+                self._remove_tiles_from_bag(placed_tiles)
+                
+                # NOTE: Calculate kept tiles (tiles from original rack that were NOT played)
+                # We need to match placed tiles against the original rack, accounting for duplicates
+                placed_base_tiles = placed_tiles.copy()  # Make a copy to modify
+                kept_tiles = []
+                
+                # For each tile in the original rack, check if it was placed
+                for tile in original_rack:
+                    if tile in placed_base_tiles:
+                        # This tile was placed - remove one occurrence
+                        placed_base_tiles.remove(tile)
+                    else:
+                        # This tile was kept (not placed)
+                        kept_tiles.append(tile)
+                
+                # NOTE: Remove kept tiles from bag so opponent can't draw them
+                # These tiles are still on the current player's rack, so they shouldn't be available
+                # We need to remove them from the bag before drawing the opponent's rack
+                self._remove_tiles_from_bag(kept_tiles)
+                
+                # NOTE: Draw new rack for next player (from remaining bag, excluding kept tiles)
+                # Special case: If bag has < 16 tiles (8 + 8) and a play would leave < 8 tiles,
+                # we stop drawing. Check if bag will have < 8 tiles after this play.
+                tiles_remaining_after_play = len(self.bag)
+                if tiles_remaining_after_play >= 8:
+                    # Draw 8 tiles for next player
+                    new_rack = self._draw_tiles(8)
+                    self.rack = new_rack
+                else:
+                    # Not enough tiles - draw what's available (or nothing)
+                    if tiles_remaining_after_play > 0:
+                        new_rack = self._draw_tiles(tiles_remaining_after_play)
+                        self.rack = new_rack
+                    else:
+                        # Bag is empty
+                        self.rack = []
         
         # Success - advance turn and save state
         self.turn += 1
@@ -521,6 +612,10 @@ class AMathGame:
             print(f"Error: Could not create rack with 8 tiles. Only found {len(new_rack)} valid tiles.")
             return False
         
+        # NOTE: Remove new rack tiles from bag (set subtraction)
+        # The old rack tiles are already in the bag, so we only need to remove the new ones
+        self._remove_tiles_from_bag(new_rack)
+        
         self.rack = new_rack
         
         # Save state
@@ -558,11 +653,13 @@ class AMathGame:
     
     def display_info(self):
         """Display game information"""
-        display_info(self.chars, self.bag, self.rack, self.turn)
+        bag_unseen_count = self._get_bag_unseen_count()
+        display_info(self.chars, self.bag, self.rack, self.turn, bag_unseen_count)
     
     def show_state(self):
-        """Show current game state"""
-        ui_show_state(self.chars, self.board, self.bag, self.rack, self.turn)
+        """Show current game state with correct bag+unseen count"""
+        bag_unseen_count = self._get_bag_unseen_count()
+        ui_show_state(self.chars, self.board, self.bag, self.rack, self.turn, bag_unseen_count)
     
     def next_play(self):
         """Go to next play in history"""
