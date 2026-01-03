@@ -497,7 +497,7 @@ class VectorVisualizer:
         hook_vectors = self.generate_front_hook_vectors(valid_vectors, adjacent_counts, cell_states)
         
         # Combine original vectors with hook vectors before filtering
-        all_vectors = valid_vectors + hook_vectors
+        # all_vectors = valid_vectors + hook_vectors
         
         # Filter vectors by removing parts with invalid adjacent cells
         filtered_vectors = self.filter_vectors_by_adjacent(valid_vectors, adjacent_counts)
@@ -517,7 +517,8 @@ class VectorVisualizer:
         #     [v for v in filtered_vectors if v not in hook_vectors]
         # )
         # filtered_vectors = filtered_non_hook + [v for v in filtered_vectors if v in hook_vectors]
-        
+        # NOTE: You can construct an edge case where you have a boxe with a one tile gap in the middle and it could be an equals.
+
         filtered_vectors = self.filter_vectors_by_distance(filtered_vectors) 
 
         filtered_vectors += hook_vectors
