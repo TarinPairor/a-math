@@ -25,6 +25,7 @@ class BoardVisualizer:
         
         # State for showing arrows
         self.show_arrows = False
+        self.show_long_arrows = False
         
         # UI constants
         canvas_width = GRID_PADDING * 2 + CELL_SIZE * N
@@ -48,6 +49,7 @@ class BoardVisualizer:
         tk.Button(control_frame, text="Reset", command=self.reset).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="= gen", command=self.toggle_equals_gen).pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Toggle Arrows", command=self.toggle_arrows).pack(side=tk.LEFT, padx=5)
+        tk.Button(control_frame, text="Long Arrows", command=self.toggle_long_arrows).pack(side=tk.LEFT, padx=5)
         
         # Draw initial grid
         self.redraw()
@@ -216,6 +218,14 @@ class BoardVisualizer:
         self.show_arrows = not self.show_arrows
         self.redraw()
     
+    def toggle_long_arrows(self):
+        """Toggle the display of long arrows (combining contiguous arrows)"""
+        self.show_long_arrows = not self.show_long_arrows
+        # Ensure arrows are enabled when long arrows is enabled
+        if self.show_long_arrows:
+            self.show_arrows = True
+        self.redraw()
+    
     def draw_arrow_down(self, x: int, y: int, size: int):
         """Draw a downward arrow in a cell (positioned in left half)"""
         # Position in left half of cell
@@ -276,6 +286,72 @@ class BoardVisualizer:
             width=1
         )
     
+    def draw_long_arrow_down(self, start_row: int, end_row: int, col: int):
+        """Draw a long downward arrow spanning multiple rows in a column"""
+        start_x, start_y = self.coord_to_pixel(start_row, col)
+        end_x, end_y = self.coord_to_pixel(end_row + 1, col)
+        
+        # Position in left half of column
+        arrow_x = start_x + CELL_SIZE // 4
+        arrow_y_start = start_y + CELL_SIZE // 4
+        arrow_y_end = end_y - CELL_SIZE // 4
+        arrow_width = CELL_SIZE * 0.125
+        
+        # Vertical line
+        self.canvas.create_line(
+            arrow_x, arrow_y_start,
+            arrow_x, arrow_y_end,
+            fill='black',
+            width=2
+        )
+        
+        # Arrow head (V shape pointing down) at bottom
+        self.canvas.create_line(
+            arrow_x, arrow_y_end,
+            arrow_x - arrow_width, arrow_y_end - arrow_width * 2,
+            fill='black',
+            width=2
+        )
+        self.canvas.create_line(
+            arrow_x, arrow_y_end,
+            arrow_x + arrow_width, arrow_y_end - arrow_width * 2,
+            fill='black',
+            width=2
+        )
+    
+    def draw_long_arrow_right(self, row: int, start_col: int, end_col: int):
+        """Draw a long rightward arrow spanning multiple columns in a row"""
+        start_x, start_y = self.coord_to_pixel(row, start_col)
+        end_x, end_y = self.coord_to_pixel(row, end_col + 1)
+        
+        # Position in bottom half of row
+        arrow_x_start = start_x + CELL_SIZE // 2
+        arrow_x_end = end_x - CELL_SIZE // 2
+        arrow_y = start_y + 3 * CELL_SIZE // 4
+        arrow_width = CELL_SIZE * 0.125
+        
+        # Horizontal line
+        self.canvas.create_line(
+            arrow_x_start, arrow_y,
+            arrow_x_end, arrow_y,
+            fill='black',
+            width=2
+        )
+        
+        # Arrow head (> shape pointing right) at right end
+        self.canvas.create_line(
+            arrow_x_end, arrow_y,
+            arrow_x_end - arrow_width * 2, arrow_y - arrow_width,
+            fill='black',
+            width=2
+        )
+        self.canvas.create_line(
+            arrow_x_end, arrow_y,
+            arrow_x_end - arrow_width * 2, arrow_y + arrow_width,
+            fill='black',
+            width=2
+        )
+    
     def redraw(self):
         """Redraw the entire grid"""
         self.canvas.delete("all")
@@ -301,6 +377,76 @@ class BoardVisualizer:
                 text=number,
                 font=('Arial', 10, 'bold')
             )
+        
+        # Collect arrow information for all cells first
+        down_arrows = [[False for _ in range(N)] for _ in range(N)]
+        right_arrows = [[False for _ in range(N)] for _ in range(N)]
+        
+        if self.show_arrows:
+            for row in range(N):
+                for col in range(N):
+                    cell_value = self.board[row][col]
+                    if cell_value == ' ':
+                        # Calculate directional counts for this cell
+                        count_above = self.count_contiguous_in_direction(row, col, -1, 0)  # up
+                        count_below = self.count_contiguous_in_direction(row, col, 1, 0)   # down
+                        count_left = self.count_contiguous_in_direction(row, col, 0, -1)   # left
+                        count_right = self.count_contiguous_in_direction(row, col, 0, 1)   # right
+                        
+                        # Default: show both arrows
+                        show_down_arrow = True
+                        show_right_arrow = True
+                        
+                        # Apply all arrow rules (same as before)
+                        if ((self._is_one_or_two(count_above) and self._is_one_or_two(count_left) and count_below == 0 and count_right == 0) or \
+                            (self._is_one_or_two(count_above) and self._is_one_or_two(count_right) and count_below == 0 and count_left == 0) or \
+                            (self._is_one_or_two(count_below) and self._is_one_or_two(count_left) and count_above == 0 and count_right == 0) or \
+                            (self._is_one_or_two(count_below) and self._is_one_or_two(count_right) and count_above == 0 and count_left == 0)):
+                            show_down_arrow = False
+                            show_right_arrow = False
+                        elif ((self._is_one_or_two(count_above)) + (self._is_one_or_two(count_below)) + (self._is_one_or_two(count_left)) + (self._is_one_or_two(count_right))) == 3:
+                            if count_left == 0:
+                                show_right_arrow = True
+                                show_down_arrow = False
+                            elif count_right == 0:
+                                show_right_arrow = True
+                                show_down_arrow = False
+                            elif count_below == 0:
+                                show_down_arrow = True
+                                show_right_arrow = False
+                            elif count_above == 0:
+                                show_down_arrow = True
+                                show_right_arrow = False
+                        elif self._is_one_or_two(count_above) and count_below == 0 and count_left == 0 and count_right == 0:
+                            show_right_arrow = False
+                            show_down_arrow = True
+                        elif self._is_one_or_two(count_below) and count_above == 0 and count_left == 0 and count_right == 0:
+                            show_right_arrow = False
+                            show_down_arrow = True
+                        elif self._is_one_or_two(count_left) and count_above == 0 and count_below == 0 and count_right == 0:
+                            show_down_arrow = False
+                            show_right_arrow = True
+                        elif self._is_one_or_two(count_right) and count_above == 0 and count_below == 0 and count_left == 0:
+                            show_down_arrow = False
+                            show_right_arrow = True
+                        
+                        # Rule: Dark blue cells always have both x and y axis arrows
+                        is_dark_blue = self.is_dark_blue_cell(row, col)
+                        if is_dark_blue:
+                            show_down_arrow = True
+                            show_right_arrow = True
+                        else:
+                            # Rule: Remove arrows if more than 8 blocks away from nearest occupied or dark blue cell
+                            dist_x = self.distance_to_nearest_occupied_or_dark_blue_x(row, col)
+                            if dist_x > 8:
+                                show_right_arrow = False
+                            
+                            dist_y = self.distance_to_nearest_occupied_or_dark_blue_y(row, col)
+                            if dist_y > 8:
+                                show_down_arrow = False
+                        
+                        down_arrows[row][col] = show_down_arrow
+                        right_arrows[row][col] = show_right_arrow
         
         # Draw grid cells
         for row in range(N):
@@ -406,98 +552,53 @@ class BoardVisualizer:
                             anchor='e'
                         )
                 
-                # Draw arrows if enabled and cell is not occupied
-                if self.show_arrows and cell_value == ' ':
-                    # Calculate directional counts for this cell
-                    count_above = self.count_contiguous_in_direction(row, col, -1, 0)  # up
-                    count_below = self.count_contiguous_in_direction(row, col, 1, 0)   # down
-                    count_left = self.count_contiguous_in_direction(row, col, 0, -1)   # left
-                    count_right = self.count_contiguous_in_direction(row, col, 0, 1)   # right
-                    
-                    arrow_size = CELL_SIZE * 0.5
-                    
-                    # Default: show both arrows
-                    show_down_arrow = True
-                    show_right_arrow = True
-                    
-                    # Rule: If 1-2 adjacent tiles on opposite sides (above/below OR left/right), do nothing (keep both arrows)
-                    # This is the default, so no special handling needed
-                    
-                    # Rule: If EXACTLY 1-2 adjacent tiles on EXACTLY 2 perpendicular sides (90 degrees apart), remove all arrows
-                    # Examples: (above and left), (above and right), (below and left), (below and right)
-                    # Must be exactly 2 sides with 1-2 adjacent blocks each, other 2 sides must be 0
-                    if ((self._is_one_or_two(count_above) and self._is_one_or_two(count_left) and count_below == 0 and count_right == 0) or \
-                        (self._is_one_or_two(count_above) and self._is_one_or_two(count_right) and count_below == 0 and count_left == 0) or \
-                        (self._is_one_or_two(count_below) and self._is_one_or_two(count_left) and count_above == 0 and count_right == 0) or \
-                        (self._is_one_or_two(count_below) and self._is_one_or_two(count_right) and count_above == 0 and count_left == 0)):
-                        show_down_arrow = False
-                        show_right_arrow = False
-                    # Rule: If EXACTLY 3 sides have exactly 1-2 adjacent blocks, point to the side where its opposite has no adjacent
-                    # Examples: (above=1-2, below=1-2, right=1-2, left=0) -> show right arrow (opposite of missing left)
-                    #          (above=1-2, below=1-2, left=1-2, right=0) -> show right arrow (pointing to missing right)
-                    #          (above=1-2, left=1-2, right=1-2, below=0) -> show down arrow (opposite of missing below)
-                    #          (below=1-2, left=1-2, right=1-2, above=0) -> show down arrow (pointing to missing above)
-                    elif ((self._is_one_or_two(count_above)) + (self._is_one_or_two(count_below)) + (self._is_one_or_two(count_left)) + (self._is_one_or_two(count_right))) == 3:
-                        # Missing left: show right arrow
-                        if count_left == 0:
-                            show_right_arrow = True
-                            show_down_arrow = False
-                        # Missing right: show right arrow (pointing to missing side)
-                        elif count_right == 0:
-                            show_right_arrow = True
-                            show_down_arrow = False
-                        # Missing below: show down arrow (opposite of missing)
-                        elif count_below == 0:
-                            show_down_arrow = True
-                            show_right_arrow = False
-                        # Missing above: show down arrow (pointing to missing side)
-                        elif count_above == 0:
-                            show_down_arrow = True
-                            show_right_arrow = False
-                    # Rule: Only apply when EXACTLY one side has EXACTLY 1-2 adjacent blocks (all other sides are 0)
-                    # If cell has EXACTLY 1-2 adjacent blocks above AND all other sides are 0 (y-axis),
-                    # remove the arrow perpendicular to it (right arrow), keep only parallel (down arrow)
-                    elif self._is_one_or_two(count_above) and count_below == 0 and count_left == 0 and count_right == 0:
-                        show_right_arrow = False
-                        show_down_arrow = True
-                    # If cell has EXACTLY 1-2 adjacent blocks below AND all other sides are 0 (y-axis),
-                    # remove the arrow perpendicular to it (right arrow), keep only parallel (down arrow)
-                    elif self._is_one_or_two(count_below) and count_above == 0 and count_left == 0 and count_right == 0:
-                        show_right_arrow = False
-                        show_down_arrow = True
-                    # If cell has EXACTLY 1-2 adjacent blocks left AND all other sides are 0 (x-axis),
-                    # remove the arrow perpendicular to it (down arrow), keep only parallel (right arrow)
-                    elif self._is_one_or_two(count_left) and count_above == 0 and count_below == 0 and count_right == 0:
-                        show_down_arrow = False
-                        show_right_arrow = True
-                    # If cell has EXACTLY 1-2 adjacent blocks right AND all other sides are 0 (x-axis),
-                    # remove the arrow perpendicular to it (down arrow), keep only parallel (right arrow)
-                    elif self._is_one_or_two(count_right) and count_above == 0 and count_below == 0 and count_left == 0:
-                        show_down_arrow = False
-                        show_right_arrow = True
-                    
-                    # Rule: Dark blue cells always have both x and y axis arrows
-                    is_dark_blue = self.is_dark_blue_cell(row, col)
-                    if is_dark_blue:
-                        show_down_arrow = True
-                        show_right_arrow = True
-                    else:
-                        # Rule: Remove arrows if more than 7 blocks away from nearest occupied or dark blue cell on respective axis
-                        # Check x-axis distance (for right arrow) - must be within 7 blocks of occupied or dark blue cell
-                        dist_x = self.distance_to_nearest_occupied_or_dark_blue_x(row, col)
-                        if dist_x > 8:
-                            show_right_arrow = False
-                        
-                        # Check y-axis distance (for down arrow) - must be within 7 blocks of occupied or dark blue cell
-                        dist_y = self.distance_to_nearest_occupied_or_dark_blue_y(row, col)
-                        if dist_y > 8:
-                            show_down_arrow = False
-                    
-                    # Draw arrows based on rules
-                    if show_down_arrow:
-                        self.draw_arrow_down(x, y, arrow_size)
-                    if show_right_arrow:
-                        self.draw_arrow_right(x, y, arrow_size)
+        # Draw arrows (individual or long based on toggle)
+        if self.show_arrows:
+            if self.show_long_arrows:
+                # Draw long arrows by finding contiguous groups
+                # For down arrows: group by column, find contiguous rows
+                for col in range(N):
+                    start_row = None
+                    for row in range(N):
+                        if down_arrows[row][col]:
+                            if start_row is None:
+                                start_row = row
+                        else:
+                            if start_row is not None:
+                                # Draw long arrow from start_row to row-1
+                                self.draw_long_arrow_down(start_row, row - 1, col)
+                                start_row = None
+                    # Handle case where group extends to end
+                    if start_row is not None:
+                        self.draw_long_arrow_down(start_row, N - 1, col)
+                
+                # For right arrows: group by row, find contiguous columns
+                for row in range(N):
+                    start_col = None
+                    for col in range(N):
+                        if right_arrows[row][col]:
+                            if start_col is None:
+                                start_col = col
+                        else:
+                            if start_col is not None:
+                                # Draw long arrow from start_col to col-1
+                                self.draw_long_arrow_right(row, start_col, col - 1)
+                                start_col = None
+                    # Handle case where group extends to end
+                    if start_col is not None:
+                        self.draw_long_arrow_right(row, start_col, N - 1)
+            else:
+                # Draw individual arrows
+                for row in range(N):
+                    for col in range(N):
+                        if down_arrows[row][col]:
+                            x, y = self.coord_to_pixel(row, col)
+                            arrow_size = CELL_SIZE * 0.5
+                            self.draw_arrow_down(x, y, arrow_size)
+                        if right_arrows[row][col]:
+                            x, y = self.coord_to_pixel(row, col)
+                            arrow_size = CELL_SIZE * 0.5
+                            self.draw_arrow_right(x, y, arrow_size)
     
     def on_click(self, event):
         """Handle click to cycle through states: empty -> N -> O -> - -> empty"""
