@@ -3,7 +3,7 @@
 from game import AMathGame
 from ui import show_state
 from tiles import get_tile_display, resolve_tile
-from generator import generate_moves
+# from generator import generate_moves
 from typing import List
 
 
@@ -170,7 +170,8 @@ def process_command(game: AMathGame, command: str) -> bool:
                 game.show_state()
     elif cmd == 'gen':
         # Generate all valid moves
-        moves = generate_moves(game.board, game.rack, game.turn, game.chars)
+        # moves = generate_moves(game.board, game.rack, game.turn, game.chars)
+        moves = None
         if moves:
             print()
             for idx, (coord, move_str, num_tiles) in enumerate(moves, 1):
