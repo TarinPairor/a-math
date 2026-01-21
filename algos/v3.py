@@ -13,7 +13,7 @@ W = "W"
 Z = "Z"
 T = "T"  # Define terminal node
 
-MAX_DEPTH = 8
+MAX_DEPTH = 7
 MAX_CONTIG_N = 3  # No more than 3 contiguous N's (N is W/Z/M)
 N_VALS = (W, Z, M)
 
@@ -218,7 +218,7 @@ def can_terminate_inverted(path):
 
     return True
 
-def build_inverted_tree():
+def build_inverted_tree(level_filter_arr=None):
     """
     Build a TREE with these rules:
       - No more than MAX_CONTIG_N=3 contiguous Ns (N is W/Z/M) *ANYWHERE* in the path.
@@ -231,7 +231,18 @@ def build_inverted_tree():
       - You cannot terminate on W->Z, must go W->Z->W only
       - You cannot terminate on ...Z -> -
       - Z->DASH->EQ is forbidden: after Z->DASH, you can only have an N (not EQ, not O, etc)
+
+    level_filter_arr: Optional list/array of length 16. Index is level. 
+        If entry is not None/empty ("") at index k, then only allow nodes at depth k whose value is level_filter_arr[k].
+        (Index 0 must be 'S'.)
     """
+    # Defensive checks for the filter array
+    if level_filter_arr is not None:
+        if len(level_filter_arr) != 16:
+            raise ValueError("level_filter_arr must be length 16")
+        if not (level_filter_arr[0] == S):
+            raise ValueError("level_filter_arr[0] must be 'S'")
+
     G = nx.DiGraph()
     node_labels = {}
 
@@ -251,6 +262,14 @@ def build_inverted_tree():
         cur_symbol = path[-1]
         cur_nodeid = get_node_id(path)
         depth = len(path) - 1
+
+        # --- PRUNE using level_filter_arr restriction ---
+        if level_filter_arr is not None:
+            if depth < len(level_filter_arr):
+                expected_val = level_filter_arr[depth]
+                # Note: index 0 is always S (already checked at root construction)
+                if expected_val is not None and expected_val != "" and cur_symbol != expected_val:
+                    continue
 
         # HARD CUT: If this path has >3 contiguous N's anywhere, do not expand it further
         if count_max_contiguous_N(path) > MAX_CONTIG_N:
@@ -320,6 +339,15 @@ def build_inverted_tree():
             possible_children = [W, Z, M]
 
         for child in possible_children:
+            # --- PRUNE using level_filter_arr restriction for the child node ---
+            # The level (depth+1) is for the next child node.
+            if level_filter_arr is not None:
+                child_level = depth + 1
+                if child_level < len(level_filter_arr):
+                    expected_val = level_filter_arr[child_level]
+                    if expected_val is not None and expected_val != "" and child != expected_val:
+                        continue
+
             # --- Z->DASH->EQ restriction: If expanding Z->DASH, do not allow EQ after
             # (already handled in possible_children above, so EQ is omitted if cur is DASH and prev is Z)
             # --- Z SPECIAL LOGIC ---
@@ -336,6 +364,12 @@ def build_inverted_tree():
                     node_labels[child_id] = child
                     # Force next children for W: O, /, -, =
                     for forced_after in [O, DIVIDE, DASH, EQ]:
+                        forced_child_level = depth + 2
+                        if level_filter_arr is not None:
+                            if forced_child_level < len(level_filter_arr):
+                                forced_val = level_filter_arr[forced_child_level]
+                                if forced_val is not None and forced_val != "" and forced_after != forced_val:
+                                    continue
                         forced_path = child_path + [forced_after]
                         if count_max_contiguous_N(forced_path) > MAX_CONTIG_N:
                             continue
@@ -365,6 +399,15 @@ def build_inverted_tree():
                     node_labels[child_id] = child
                     # Only one expansion: immediately W as next
                     zz_w_path = child_path + [W]
+                    forced_child_level = depth + 2
+                    if level_filter_arr is not None:
+                        if forced_child_level < len(level_filter_arr):
+                            forced_val = level_filter_arr[forced_child_level]
+                            if forced_val is not None and forced_val != "" and W != forced_val:
+                                # If not permitted at this level, skip this W branch
+                                G.add_edge(child_id, child_id)  # Make sure the edge exists, even if no forced W (no expansion)
+                                G.add_edge(cur_nodeid, child_id)
+                                continue
                     if count_max_contiguous_N(zz_w_path) > MAX_CONTIG_N:
                         continue
                     zz_w_id = get_node_id(zz_w_path)
@@ -373,6 +416,12 @@ def build_inverted_tree():
                         node_labels[zz_w_id] = W
                         # Force W's children: O,/, -, =
                         for forced_after in [O, DIVIDE, DASH, EQ]:
+                            zz_forced_child_level = depth + 3
+                            if level_filter_arr is not None:
+                                if zz_forced_child_level < len(level_filter_arr):
+                                    forced_w_val = level_filter_arr[zz_forced_child_level]
+                                    if forced_w_val is not None and forced_w_val != "" and forced_after != forced_w_val:
+                                        continue
                             forced_path = zz_w_path + [forced_after]
                             if count_max_contiguous_N(forced_path) > MAX_CONTIG_N:
                                 continue
@@ -431,6 +480,14 @@ def build_inverted_tree():
                     node_labels[zw_id] = Z
                     # Only one forced child, W
                     zw_w_path = zw_path + [W]
+                    forced_child_level = depth + 2
+                    if level_filter_arr is not None:
+                        if forced_child_level < len(level_filter_arr):
+                            forced_val = level_filter_arr[forced_child_level]
+                            if forced_val is not None and forced_val != "" and W != forced_val:
+                                G.add_edge(zw_id, zw_id)
+                                G.add_edge(cur_nodeid, zw_id)
+                                continue
                     if count_max_contiguous_N(zw_w_path) > MAX_CONTIG_N:
                         continue
                     zw_w_id = get_node_id(zw_w_path)
@@ -469,9 +526,13 @@ def build_inverted_tree():
 
     return G, node_labels
 
+# Example usage (original usage for backward compatibility)
 # Build and display the tree
 
-inverted_G, inverted_labels = build_inverted_tree()
+# Example usage with a valid 16-length array sample for level_filter_arr:
+sample_level_filter = [S, Z, None, W, None, W, None, None, None, None, None, None, None, None, None, None]  # 16 elements
+inverted_G, inverted_labels = build_inverted_tree(sample_level_filter)
+
 
 # Node counts and T's for debug
 type_cnt_inv = Counter()
@@ -484,44 +545,27 @@ print("Node counts in inverted TREE:", type_cnt_inv)
 print("Number of terminal nodes (T):", num_terminators_inv)
 print("Total nodes in inverted TREE:", len(inverted_G.nodes))
 
+# Uncomment for visualization if needed
+# try:
+#     inv_pos = nx.nx_pydot.graphviz_layout(inverted_G, prog='dot')
+# except Exception:
+#     inv_pos = nx.spring_layout(inverted_G)
 
-def get_terminal_paths_tree(tree, T, start_node=None):
-    """
-    Find all paths from the root to terminal nodes labeled T in a tree,
-    returning paths as lists of labels.
-    If start_node is not given, starts from the root (the unique node with in-degree 0).
-    Assumes 'tree' is a directed tree (no cycles, unique parent for all nodes except root).
-    """
-    import networkx as nx
+# def show_path_label(node_tuple):
+#     symbol = node_tuple[-1]
+#     depth = len(node_tuple) - 1
+#     return f"{symbol}\ndepth={depth}"
 
-    if start_node is None:
-        # In a tree, the root has in-degree 0
-        roots = [n for n in tree.nodes if tree.in_degree(n) == 0]
-        if not roots:
-            raise ValueError("No root found in the tree.")
-        start_node = roots[0]
+# draw_labels_inv = {k: show_path_label(k) for k in inverted_G.nodes}
 
-    results = []
+# plt.figure(figsize=(20, 14))
+# nx.draw(inverted_G, inv_pos, with_labels=True, labels=draw_labels_inv, arrows=False, node_size=200, node_color='lightyellow', font_size=10)
+# plt.title("Inverted S → N TREE (N=W,Z,M), max 3 contiguous N, otherwise legacy expansion")
+# plt.tight_layout(pad=3.0)
+# plt.show()
 
-    def dfs(node, path):
-        node_label = tree.nodes[node].get("label", "")
-        new_path = path + [node_label]
-        children = list(tree.successors(node))
-        if not children:
-            if node_label == T:
-                results.append(new_path)
-        else:
-            for child in children:
-                dfs(child, new_path)
+# plt.show()
 
-    dfs(start_node, [])
-
-    return results
-
-terminal_paths_tree = get_terminal_paths_tree(inverted_G, T)
-for p in terminal_paths_tree:
-    print(p)
-print(len(terminal_paths_tree))
 
 
 import networkx as nx
@@ -670,12 +714,14 @@ def can_terminate(path):
 
     return True
 
-
-def build_custom_tree():
+def build_custom_tree(level_filter_arr=None):
     """
     TREE version of your DAG:
       - Node id is the FULL PATH (tuple), so same symbol at same depth is NOT shared.
       - All expansion rules + W-streak constraint remain the same.
+      - New: Accepts 'level_filter_arr' as a 16-element array of symbols/null.
+        If level_filter_arr[level] is not None/"", prune all nodes at this level (index)
+        where symbol != level_filter_arr[level]. Index 0 is always S and enforced S.
     """
     G = nx.DiGraph()
     node_labels = {}
@@ -697,6 +743,15 @@ def build_custom_tree():
         depth = len(path) - 1
         nodetype = path[-1]
         cur_id = node_id(path)
+
+        # ------ Prune nodes at given level if mismatch with level_filter_arr ------
+        if level_filter_arr is not None:
+            # Only examine for level 0..15
+            if depth < len(level_filter_arr):
+                filter_val = level_filter_arr[depth]
+                # skip None or "", but enforce filter
+                if filter_val not in (None, "") and nodetype != filter_val:
+                    continue
 
         # Depth cutoff
         if depth >= MAX_DEPTH:
@@ -731,6 +786,14 @@ def build_custom_tree():
 
             child_path = path + [child_symbol]
             child_id = node_id(child_path)
+
+            # --- Also prune children before enqueue if they don't match the filter (for efficiency) ---
+            if level_filter_arr is not None:
+                next_depth = len(child_path) - 1
+                if next_depth < len(level_filter_arr):
+                    filter_val = level_filter_arr[next_depth]
+                    if filter_val not in (None, "") and child_symbol != filter_val:
+                        return
 
             if child_id not in G:
                 G.add_node(child_id, label=child_symbol)
@@ -783,8 +846,13 @@ def build_custom_tree():
 
     return G, node_labels
 
+# EXAMPLE USAGE:
+# To match the example in your inverted code above, for instance:
+level_filter_arr = [S, Z, Z, W, None, W, None, None, None, None, None, None, None, None, None, None]
+# You may use None or "" for empty slots.
 
-custom_G, custom_labels = build_custom_tree()
+# Example: no filter provided (original behavior)
+custom_G, custom_labels = build_custom_tree(level_filter_arr)
 
 type_cnt = Counter()
 for nodeid in custom_G.nodes:
@@ -795,105 +863,19 @@ print("Number of T nodes:", type_cnt.get(T, 0))
 print("Total nodes:", len(custom_G.nodes))
 print("Total edges:", len(custom_G.edges))
 
+# try:
+#     pos = nx.nx_pydot.graphviz_layout(custom_G, prog="dot")
+# except Exception:
+#     pos = nx.spring_layout(custom_G)
 
-import networkx as nx
-from collections import Counter
+# draw_labels = {k: f"{custom_labels[k]}\n{list(k)}" for k in custom_G.nodes}
 
-def prune_tree(G, target_counts, T, S):
-    """
-    Return a new pruned TREE (as a new nx.DiGraph) from a TREE G,
-    such that no root->node path contains more than allowed counts (target_counts)
-    for any counted label.
-
-    Assumes G is a tree rooted at label S (i.e., unique paths), such as your custom tree
-    where node ids are full path tuples.
-
-    Behavior matches your DAG version:
-      - If a node would exceed counts, that entire branch is cut.
-      - Non-T leaves are dropped (i.e., only keep leaves that are T).
-    """
-    pruned_G = nx.DiGraph()
-
-    # Count only labels that appear in target_counts (except S and T)
-    count_keys = set(target_counts.keys()) - {S, T}
-
-    # find root
-    root = None
-    for nodeid in G.nodes:
-        if G.nodes[nodeid].get("label", "") == S:
-            root = nodeid
-            break
-    if root is None:
-        raise ValueError("No S root node found in tree")
-
-    def dfs(old_node, parent_new, curr_counts):
-        label = G.nodes[old_node].get("label", "")
-
-        # update counts if relevant
-        next_counts = curr_counts.copy()
-        if label in count_keys:
-            limit = target_counts.get(label, 0)
-            if limit <= 0:
-                return  # not allowed at all
-            if curr_counts[label] >= limit:
-                return  # would exceed
-            next_counts[label] += 1
-
-        # add this node to pruned tree (tree => 1:1 mapping old->new is fine)
-        if old_node not in pruned_G:
-            pruned_G.add_node(old_node, label=label)
-        if parent_new is not None:
-            pruned_G.add_edge(parent_new, old_node)
-
-        children = list(G.successors(old_node))
-        if not children:
-            # leaf: keep only if it's T, otherwise remove it
-            if label != T:
-                pruned_G.remove_node(old_node)
-            return
-
-        # recurse
-        for ch in children:
-            dfs(ch, old_node, next_counts)
-
-        # cleanup: if after pruning this node became a non-T leaf, drop it too
-        if pruned_G.has_node(old_node):
-            if pruned_G.out_degree(old_node) == 0 and label != T:
-                pruned_G.remove_node(old_node)
-
-    dfs(root, None, Counter())
-    return pruned_G
-
-
-def label_counts_on_graph(G):
-    return Counter(G.nodes[n].get("label", "") for n in G.nodes)
-
-
-# Example target counts (same as yours; tweak as needed)
-target_counts = {O: 0, M: 2, W: 2, Z: 0, DASH: 0, EQ: 0, DIVIDE: 0}
-
-# Prune your CUSTOM TREE (not the DAG)
-pruned_tree_G = prune_tree(custom_G, target_counts, T, S)
-
-custom_counts = label_counts_on_graph(pruned_tree_G)
-print("Node counts in pruned TREE:", custom_counts)
-print("Number of T nodes:", custom_counts.get(T, 0))
-print("Total nodes:", len(pruned_tree_G.nodes))
-print("Total edges:", len(pruned_tree_G.edges))
-
-
-try:
-    pos = nx.nx_pydot.graphviz_layout(pruned_tree_G, prog='dot')
-except Exception:
-    pos = nx.spring_layout(pruned_tree_G)
-
-draw_labels = nx.get_node_attributes(pruned_tree_G, "label")
-plt.figure(figsize=(20, 14))
-nx.draw(pruned_tree_G, pos, with_labels=True, labels=draw_labels, arrows=False,
-        node_size=1000, node_color='peachpuff', font_size=10)
-plt.title("Custom TREE (displayed as tree)")
-plt.tight_layout(pad=3.0)
-plt.show()
+# plt.figure(figsize=(20, 14))
+# nx.draw(custom_G, pos, with_labels=True, labels=draw_labels, arrows=False,
+#         node_size=200, node_color="lightcyan", font_size=8)
+# plt.title("Custom TREE (no merging): node id = full path")
+# plt.tight_layout(pad=3.0)
+# plt.show()
 
 
 
