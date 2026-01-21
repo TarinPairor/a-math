@@ -1438,7 +1438,7 @@ def generate_all_equations(
                 
                 # Split le by comma, reverse the array, join by comma, then add to equations
                 le_reversed = ",".join(le.split(",")[::-1])
-                equations.add(f"{le_reversed}{special_sep}{re}")
+                equations.add(f"{le_reversed},{special_sep},{re}")
 
     return sorted(equations)
 
