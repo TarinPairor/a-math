@@ -88,6 +88,78 @@ class BoardVisualizer:
                 return True
         return False
     
+    def row_col_to_coord(self, row: int, col: int, horizontal: bool = True) -> str:
+        """Convert row, col to coordinate string
+        If horizontal: format as "8A" (number then letter)
+        If vertical: format as "A8" (letter then number)
+        """
+        letter = chr(ord('A') + col)
+        number = str(row + 1)
+        if horizontal:
+            return f"{number}{letter}"
+        else:
+            return f"{letter}{number}"
+    
+    def get_green_lines(self) -> list:
+        """Return all green lines as coordinate strings
+        Horizontal lines: format as "8A-8K" (number-char to number-char)
+        Vertical lines: format as "A8-K8" (char-number to char-number)
+        """
+        green_cells = self.get_green_highlight_cells()
+        if not green_cells:
+            return []
+        
+        lines = []
+        
+        # Group green cells into horizontal and vertical lines
+        # Horizontal lines: same row, contiguous columns
+        processed = set()
+        
+        # Find horizontal lines
+        for row in range(N):
+            col = 0
+            while col < N:
+                if (row, col) in green_cells and (row, col) not in processed:
+                    # Start of a horizontal line
+                    start_col = col
+                    # Find the end of the line
+                    while col < N and (row, col) in green_cells:
+                        processed.add((row, col))
+                        col += 1
+                    end_col = col - 1
+                    
+                    # Only add if line has at least 2 cells (or we want single cells too?)
+                    if start_col <= end_col:
+                        start_coord = self.row_col_to_coord(row, start_col, horizontal=True)
+                        end_coord = self.row_col_to_coord(row, end_col, horizontal=True)
+                        lines.append(f"{start_coord}-{end_coord}")
+                else:
+                    col += 1
+        
+        # Find vertical lines
+        processed_vertical = set()
+        for col in range(N):
+            row = 0
+            while row < N:
+                if (row, col) in green_cells and (row, col) not in processed_vertical:
+                    # Start of a vertical line
+                    start_row = row
+                    # Find the end of the line
+                    while row < N and (row, col) in green_cells:
+                        processed_vertical.add((row, col))
+                        row += 1
+                    end_row = row - 1
+                    
+                    # Only add if line has at least 2 cells (or we want single cells too?)
+                    if start_row <= end_row:
+                        start_coord = self.row_col_to_coord(start_row, col, horizontal=False)
+                        end_coord = self.row_col_to_coord(end_row, col, horizontal=False)
+                        lines.append(f"{start_coord}-{end_coord}")
+                else:
+                    row += 1
+        
+        return lines
+    
     def get_green_highlight_cells(self) -> set:
         """Get cells that should be highlighted green from '=' signs"""
         green_cells = set()

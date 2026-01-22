@@ -3,7 +3,7 @@
 from game import AMathGame
 from ui import show_state
 from tiles import get_tile_display, resolve_tile
-# from generator import generate_moves
+from generator import generate_moves
 from typing import List
 
 
@@ -170,15 +170,16 @@ def process_command(game: AMathGame, command: str) -> bool:
                 game.show_state()
     elif cmd == 'gen':
         # Generate all valid moves
-        # moves = generate_moves(game.board, game.rack, game.turn, game.chars)
-        moves = None
+        moves, debug_info = generate_moves(game, debug=True)
         if moves:
             print()
-            for idx, (coord, move_str, num_tiles) in enumerate(moves, 1):
-                # Calculate leave (tiles remaining)
-                leave = calculate_leave(game.rack, move_str)
-                # Format: idx: coord move_str leave (keep commas in move string)
-                print(f"{idx:3}: {coord:<4} {move_str:<15} {leave}")
+            print(f"{'Move':<20} {'Leave':<15} {'Score':>5}")
+            print("-" * 42)
+            for idx, (coord, move_str, leave, score) in enumerate(moves, 1):
+                # Format: idx: coord move_str leave score
+                move_display = move_str[:20] if len(move_str) > 20 else move_str
+                leave_display = leave[:15] if len(leave) > 15 else leave
+                print(f"{idx:3}: {coord:<4} {move_display:<20} {leave_display:<15} {score:>5}")
         else:
             print("No valid moves found")
     else:

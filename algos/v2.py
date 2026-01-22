@@ -1510,3 +1510,12 @@ for eq in correct_eqs:
     mirrored_eqs.add(mirrored)
     mirrored_eqs.add(eq)
 sorted(mirrored_eqs)
+
+
+def constraint_eq(s, lhs_len, rhs_len):
+    a, b = s.split('(=)')[0], s.split('(=)')[1]
+    a = [x for x in re.split(',', a) if x]
+    b = [x for x in re.split(',', b) if x]
+    return len(a) <= lhs_len and len(b) <= rhs_len
+
+[s for s in mirrored_eqs if constraint_eq(s, 3, 16)]
