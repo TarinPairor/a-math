@@ -1,0 +1,4 @@
+# 27 May
+
+Returns groupings of terms ignoring order
+12 tiles runs in 1.2 secs, 11 in 0.7, 10 in 0.0
