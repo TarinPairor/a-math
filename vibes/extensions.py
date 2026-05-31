@@ -59,7 +59,25 @@ def _is_legal_extension(side: ExtensionSide, text: str) -> bool:
     else:
         return False
 
-    return not any(bad in text for bad in ("++", "+-", "-+", "--"))
+    body = text[:-1] if side == "front" else text[1:]
+    if not body or body.startswith("+"):
+        return False
+    if body.startswith("0") and len(body) > 1 and body[1].isdigit():
+        return False
+
+    return not any(
+        bad in text
+        for bad in (
+            "++",
+            "+-",
+            "-+",
+            "--",
+            "*+",
+            "*-",
+            "/+",
+            "/-",
+        )
+    )
 
 
 def _pieces_by_value(options: list[tuple[str, ...]]) -> dict[Fraction, list[Piece]]:
@@ -86,15 +104,15 @@ def _same_value_disjoint_pairs(
                 yield left, right
 
 
-# Case 1:
-def generate_additive_zero_extensions(
+# Case 1 + 3:
+def generate_zero_extensions(
     tiles: list[object],
     *,
     include_front: bool = True,
     include_back: bool = True,
     max_results: int | None = None,
 ) -> AdditiveZeroExtensions:
-    """Generate additive-zero extension chunks from a rack of A-Math tiles.
+    """Generate zero-valued extension chunks from a rack of A-Math tiles.
 
     Returns ``{"front": [...], "back": [...]}``. The key tells the caller where
     each chunk can be attached to an existing board expression:
