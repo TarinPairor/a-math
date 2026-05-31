@@ -1,4 +1,4 @@
 # 27 May
 
-Returns groupings of terms ignoring order
+Returns groupings of terms ignoring order. Still generates '-10/-1-2=8' which is syntactically incorrect
 12 tiles runs in 1.2 secs, 11 in 0.7, 10 in 0.0
